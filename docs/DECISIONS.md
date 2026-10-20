@@ -7,7 +7,7 @@
 ## Stack Technique Verrouillée
 
 ### Langage et Runtime
-- **Choix** : C# avec .NET 8
+- **Choix** : C# .NET 10 (LTS), Native AOT
 - **Raison** :
   - Performance native avec AOT (Ahead-of-Time compilation)
   - Accès direct à Win32 via P/Invoke
@@ -142,7 +142,6 @@
 ### Maintenance
 | Risque | Impact | Mitigation |
 |--------|--------|------------|
-| Dépendance à .NET 8 | Mineur | .NET 8 est LTS (support jusqu'en novembre 2026) |
 | Changements dans les APIs Win32 | Mineur | Utiliser CsWin32 pour générer les bindings à jour |
 | Complexité de la gestion des pages | Mineur | Garder le code simple, éviter les abstractions inutiles |
 
