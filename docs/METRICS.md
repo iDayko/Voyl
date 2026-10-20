@@ -113,10 +113,10 @@
    ```powershell
    dotnet publish -c Release -r win-x64 --self-contained true /p:PublishAot=true
    ```
-2. Trouver le fichier `Voyl.exe` dans `bin/Release/net8.0/win-x64/publish/`.
+2. Trouver le fichier `Voyl.exe` dans `bin/Release/net10.0/win-x64/publish/`.
 3. Vérifier sa taille avec l'Explorateur de fichiers ou :
    ```powershell
-   Get-Item .\bin\Release\net8.0\win-x64\publish\Voyl.exe | Select-Object Length
+   Get-Item .\bin\Release\net10.0\win-x64\publish\Voyl.exe | Select-Object Length
    ```
    (La valeur `Length` est en octets. Diviser par 1MB pour obtenir la taille en Mo.)
 
