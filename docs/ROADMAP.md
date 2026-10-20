@@ -43,11 +43,11 @@
 
 ## Étape 1 : Squelette
 
-**Objectif** : Solution .NET 8 minimaliste avec fenêtre vide, logging, et mécanisme de sortie de secours.
+**Objectif** : Solution .NET 10 minimaliste avec fenêtre vide, logging, et mécanisme de sortie de secours.
 
 **Livrables** :
 - `src/Voyl.sln` (solution Visual Studio)
-- `src/Voyl/Voyl.csproj` (projet .NET 8)
+- `src/Voyl/Voyl.csproj` (projet .NET 10)
 - `src/Voyl/Program.cs` (point d'entrée)
 - `src/Voyl/NativeMethods.cs` (interop Win32 via CsWin32)
 - Mécanisme de sortie : touche globale (ex: Ctrl+Alt+Shift+Q) pour quitter
