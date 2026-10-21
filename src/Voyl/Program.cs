@@ -87,8 +87,8 @@ namespace Voyl
                     DestroyWindow(hWnd);
                     PostQuitMessage(0);
                     return IntPtr.Zero;
-                case 0x0112:
-                    if ((wParam.ToInt32() & 0xFFF0) == 0xF010)
+                case 0x0112: // WM_SYSCOMMAND
+                    if ((wParam.ToInt32() & 0xFFF0) == 0xF060) // SC_CLOSE
                     {
                         DestroyWindow(hWnd);
                         PostQuitMessage(0);
