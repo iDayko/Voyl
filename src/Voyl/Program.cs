@@ -7,8 +7,9 @@ namespace Voyl
     {
         private const string WindowClassName = "VoylWindowClass";
         private const string WindowTitle = "Voyl";
-        private const int WindowWidth = 800;
-        private const int WindowHeight = 450;
+
+        // HWND_BOTTOM = (IntPtr)1, HWND_TOPMOST = (IntPtr)-1, HWND_TOP = (IntPtr)0
+        private static readonly IntPtr HWND_BOTTOM = (IntPtr)1;
 
         private static IntPtr _hwnd = IntPtr.Zero;
         private static delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr> _windowProc = &WindowProc;
@@ -31,7 +32,12 @@ namespace Voyl
                 return 1;
             }
 
-            ShowWindow(_hwnd, 1);
+            // Positionner en bas du Z-order (derrière les icônes du bureau)
+            int screenWidth = GetSystemMetrics(0); // SM_CXSCREEN
+            int screenHeight = GetSystemMetrics(1); // SM_CYSCREEN
+            SetWindowPos(_hwnd, HWND_BOTTOM, 0, 0, screenWidth, screenHeight, 0x0001 | 0x0002); // SWP_NOACTIVATE | SWP_NOZORDER
+
+            ShowWindow(_hwnd, 1); // SW_SHOWNORMAL
 
             while (GetMessageW(out var msg, IntPtr.Zero, 0, 0))
             {
@@ -70,8 +76,8 @@ namespace Voyl
                 0,
                 WindowClassName,
                 WindowTitle,
-                0x00CF0000, // WS_OVERLAPPEDWINDOW
-                100, 100, WindowWidth, WindowHeight,
+                0x80000000, // WS_POPUP
+                0, 0, 0, 0, // Position et taille initiales (seront ajustées par SetWindowPos)
                 IntPtr.Zero,
                 IntPtr.Zero,
                 GetModuleHandleW(null!),
@@ -83,10 +89,11 @@ namespace Voyl
         {
             switch (msg)
             {
-                case 0x0010:
+                case 0x0010: // WM_CLOSE
                     DestroyWindow(hWnd);
                     PostQuitMessage(0);
                     return IntPtr.Zero;
+
                 case 0x0112: // WM_SYSCOMMAND
                     if ((wParam.ToInt32() & 0xFFF0) == 0xF060) // SC_CLOSE
                     {
@@ -95,18 +102,21 @@ namespace Voyl
                         return IntPtr.Zero;
                     }
                     break;
-                case 0x0100:
-                    if (wParam.ToInt32() == 0x1B)
+
+                case 0x0100: // WM_KEYDOWN
+                    if (wParam.ToInt32() == 0x1B) // VK_ESCAPE
                     {
                         DestroyWindow(hWnd);
                         PostQuitMessage(0);
                         return IntPtr.Zero;
                     }
                     break;
-                case 0x0002:
+
+                case 0x0002: // WM_DESTROY
                     PostQuitMessage(0);
                     return IntPtr.Zero;
             }
+
             return DefWindowProcW(hWnd, msg, wParam, lParam);
         }
 
@@ -165,6 +175,12 @@ namespace Voyl
 
         [DllImport("user32.dll")]
         private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
+        [DllImport("user32.dll")]
+        private static extern int GetSystemMetrics(int nIndex);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr GetModuleHandleW(string? lpModuleName);
