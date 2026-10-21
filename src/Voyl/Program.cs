@@ -26,16 +26,20 @@ namespace Voyl
             _desktopHwnd = GetDesktopWindow();
             _progmanHwnd = FindWindowW("Progman", "Program Manager");
             
-            // Chercher SysListView32 parmi tous les enfants de Progman (récursif)
+            // Forcer la création de SysListView32 en envoyant WM_PRINTCLIENT à Progman
             if (_progmanHwnd != IntPtr.Zero)
             {
-                _sysListHwnd = FindSysListView32(_progmanHwnd);
-            }
-            
-            // Si toujours pas trouvé, chercher dans tout le système
-            if (_sysListHwnd == IntPtr.Zero)
-            {
-                _sysListHwnd = FindWindowW("SysListView32", null);
+                SendMessageW(_progmanHwnd, 0x0317, IntPtr.Zero, IntPtr.Zero); // WM_PRINTCLIENT = 0x0317
+                Thread.Sleep(500); // Attendre que SysListView32 soit créé
+                
+                // Maintenant chercher SysListView32
+                _sysListHwnd = FindWindowExW(_progmanHwnd, IntPtr.Zero, "SysListView32", null);
+                
+                // Chercher récursivement si pas trouvé directement
+                if (_sysListHwnd == IntPtr.Zero)
+                {
+                    _sysListHwnd = FindSysListView32(_progmanHwnd);
+                }
             }
             
             Log.Write($"DIAG: Desktop=0x{_desktopHwnd.ToInt64():X}, Progman=0x{_progmanHwnd.ToInt64():X}, SysListView32=0x{_sysListHwnd.ToInt64():X}");
@@ -59,23 +63,37 @@ namespace Voyl
             int screenWidth = GetSystemMetrics(0);
             int screenHeight = GetSystemMetrics(1);
             
-            // MONTRER la fenêtre
             ShowWindow(_hwnd, 5); // SW_SHOWNA
             
-            // Placer DERRIÈRE tout (HWND_BOTTOM = 1)
-            // Sans SWP_NOZORDER pour forcer le changement de Z-order
-            bool setPosResult = SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0000);
-            Log.Write($"DIAG: SetWindowPos(HWND_BOTTOM) result={setPosResult}");
+            // Stratégie finale:
+            // 1. Si SysListView32 trouvé -> se placer DEVANT lui (pour être derrière les icônes)
+            // 2. Sinon si Progman trouvé -> se placer DEVANT Progman
+            // 3. Sinon -> HWND_BOTTOM
+            IntPtr insertAfter = IntPtr.Zero;
+            if (_sysListHwnd != IntPtr.Zero)
+            {
+                insertAfter = _sysListHwnd;
+                Log.Write("DIAG: Positioning behind SysListView32");
+            }
+            else if (_progmanHwnd != IntPtr.Zero)
+            {
+                insertAfter = _progmanHwnd;
+                Log.Write("DIAG: Positioning behind Progman");
+            }
+            else
+            {
+                insertAfter = (IntPtr)1; // HWND_BOTTOM
+                Log.Write("DIAG: Positioning at HWND_BOTTOM");
+            }
+            
+            // SWP_NOACTIVATE = 0x0010, SWP_NOZORDER = 0x0004
+            // On utilise AUCUN flag pour forcer le repositionnement complet
+            bool setPosResult = SetWindowPos(_hwnd, insertAfter, 0, 0, screenWidth, screenHeight, 0x0000);
+            Log.Write($"DIAG: SetWindowPos(insertAfter=0x{insertAfter.ToInt64():X}) result={setPosResult}");
             
             // Vérifier
             bool isVisible = IsWindowVisible(_hwnd);
             Log.Write($"DIAG: IsWindowVisible={isVisible}");
-            
-            // Vérifier l'ordre Z: obtenir le HWND de la fenêtre sous le curseur
-            POINT cursorPos;
-            GetCursorPos(out cursorPos);
-            IntPtr hwndUnderCursor = WindowFromPoint(cursorPos);
-            Log.Write($"DIAG: HWND under cursor=0x{hwndUnderCursor.ToInt64():X}");
 
             while (GetMessageW(out var msg, IntPtr.Zero, 0, 0))
             {
@@ -215,13 +233,6 @@ namespace Voyl
             public int ptY;
         }
 
-        [StructLayout(LayoutKind.Sequential)]
-        private struct POINT
-        {
-            public int x;
-            public int y;
-        }
-
         [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern ushort RegisterClassExW(ref WNDCLASSEXW wndClass);
 
@@ -268,10 +279,7 @@ namespace Voyl
         private static extern bool IsWindowVisible(IntPtr hWnd);
 
         [DllImport("user32.dll")]
-        private static extern bool GetCursorPos(out POINT lpPoint);
-
-        [DllImport("user32.dll")]
-        private static extern IntPtr WindowFromPoint(POINT Point);
+        private static extern IntPtr SendMessageW(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr GetModuleHandleW(string? lpModuleName);
