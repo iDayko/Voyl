@@ -38,21 +38,21 @@ namespace Voyl
             int screenWidth = GetSystemMetrics(0);
             int screenHeight = GetSystemMetrics(1);
             
-            // 1. Rendre transparente AVANT de montrer
+            // 1. MONTRER la fenêtre D'ABORD (nécessaire pour SetLayeredWindowAttributes)
+            ShowWindow(_hwnd, 5); // SW_SHOWNA
+            
+            // 2. Rendre transparente
             bool layeredResult = SetLayeredWindowAttributes(_hwnd, 0, 0, 0x00000002); // LWA_ALPHA
             Log.Write($"DIAG: SetLayeredWindowAttributes(alpha=0) result={layeredResult}");
             
-            // 2. Placer en bas du Z-order
+            // 3. Placer en bas du Z-order
             bool setPosResult = SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0000); // HWND_BOTTOM
             Log.Write($"DIAG: SetWindowPos(HWND_BOTTOM) result={setPosResult}");
             
-            // 3. Enregistrer le hotkey Échap
+            // 4. Enregistrer le hotkey Échap
             bool hotkeyResult = RegisterHotKey(_hwnd, HOTKEY_ID, 0, 0x1B);
             Log.Write($"DIAG: RegisterHotKey result={hotkeyResult}");
-            
-            // 4. MONTRER la fenêtre
-            ShowWindow(_hwnd, 5); // SW_SHOWNA
-            
+
             bool isVisible = IsWindowVisible(_hwnd);
             Log.Write($"DIAG: IsWindowVisible={isVisible}");
 
