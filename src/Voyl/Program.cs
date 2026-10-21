@@ -37,16 +37,17 @@ namespace Voyl
             int screenWidth = GetSystemMetrics(0);
             int screenHeight = GetSystemMetrics(1);
             
-            // MONTRER la fenêtre D'ABORD
-            ShowWindow(_hwnd, 5); // SW_SHOWNA
-            
-            // Placer en bas du Z-order
-            SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0000); // HWND_BOTTOM
-            
-            // Rendre la fenêtre complètement transparente (alpha=0) mais toujours présente
+            // 1. Rendre la fenêtre layered avec alpha=0 (transparente)
             // LWA_ALPHA = 0x00000002
             bool layeredResult = SetLayeredWindowAttributes(_hwnd, 0, 0, 0x00000002);
             Log.Write($"DIAG: SetLayeredWindowAttributes(alpha=0) result={layeredResult}");
+            
+            // 2. Placer en bas du Z-order
+            bool setPosResult = SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0000);
+            Log.Write($"DIAG: SetWindowPos(HWND_BOTTOM) result={setPosResult}");
+            
+            // 3. MONTRER la fenêtre (après avoir tout configuré)
+            ShowWindow(_hwnd, 5); // SW_SHOWNA
             
             bool isVisible = IsWindowVisible(_hwnd);
             Log.Write($"DIAG: IsWindowVisible={isVisible}");
