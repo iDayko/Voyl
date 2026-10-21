@@ -38,7 +38,7 @@ namespace Voyl
             int screenWidth = GetSystemMetrics(0);
             int screenHeight = GetSystemMetrics(1);
             
-            // Trouver Progman (fenêtre du bureau) et SysListView32 (icônes)
+            // Trouver la bonne hiérarchie : Progman -> (WorkerW) -> SHELLDLL_DefView -> SysListView32
             IntPtr desktop = GetDesktopWindow();
             IntPtr progman = FindWindow("Progman", null);
             if (progman == IntPtr.Zero)
@@ -46,36 +46,47 @@ namespace Voyl
                 progman = GetWindow(desktop, 5); // GW_CHILD
             }
             
-            // Chercher SysListView32 comme enfant direct de Progman
-            IntPtr sysListView32 = FindWindowEx(progman, IntPtr.Zero, "SysListView32", null);
+            // Chercher SHELLDLL_DefView dans Progman ou ses WorkerW
+            IntPtr shellDefView = FindWindowEx(progman, IntPtr.Zero, "SHELLDLL_DefView", null);
             
-            // Si non trouvé, chercher WorkerW puis SysListView32 dedans
-            if (sysListView32 == IntPtr.Zero)
+            // Si non trouvé, énumérer tous les WorkerW pour trouver celui qui contient SHELLDLL_DefView
+            if (shellDefView == IntPtr.Zero)
             {
-                IntPtr workerW = FindWindowEx(progman, IntPtr.Zero, "WorkerW", null);
-                if (workerW != IntPtr.Zero)
+                IntPtr workerW = IntPtr.Zero;
+                do
                 {
-                    sysListView32 = FindWindowEx(workerW, IntPtr.Zero, "SysListView32", null);
+                    workerW = FindWindowEx(desktop, workerW, "WorkerW", null);
+                    shellDefView = FindWindowEx(workerW, IntPtr.Zero, "SHELLDLL_DefView", null);
+                }
+                while (shellDefView == IntPtr.Zero && workerW != IntPtr.Zero);
+            }
+            
+            // Maintenant chercher SysListView32 dans SHELLDLL_DefView
+            IntPtr sysListView32 = IntPtr.Zero;
+            if (shellDefView != IntPtr.Zero)
+            {
+                sysListView32 = FindWindowEx(shellDefView, IntPtr.Zero, "SysListView32", "FolderView");
+                if (sysListView32 == IntPtr.Zero)
+                {
+                    sysListView32 = FindWindowEx(shellDefView, IntPtr.Zero, "SysListView32", null);
                 }
             }
             
-            Log.Write($"DIAG: Desktop=0x{desktop.ToInt64():X}, Progman=0x{progman.ToInt64():X}, SysListView32=0x{sysListView32.ToInt64():X}");
+            Log.Write($"DIAG: Desktop=0x{desktop.ToInt64():X}, Progman=0x{progman.ToInt64():X}, SHELLDLL_DefView=0x{shellDefView.ToInt64():X}, SysListView32=0x{sysListView32.ToInt64():X}");
             
             // 1. MONTRER la fenêtre (nécessaire avant SetWindowPos)
             ShowWindow(_hwnd, 5); // SW_SHOWNA
             
-            // 2. Placer derrière SysListView32 (icônes) ou Progman ou HWND_BOTTOM
-            IntPtr insertAfter = sysListView32 != IntPtr.Zero ? sysListView32 : (progman != IntPtr.Zero ? progman : (IntPtr)1); // HWND_BOTTOM = 1
-            uint flags = 0x0002 | 0x0001 | 0x0004; // SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE
-            bool setPosResult = SetWindowPos(_hwnd, insertAfter, 0, 0, 0, 0, flags);
-            Log.Write($"DIAG: SetWindowPos(insertAfter=0x{insertAfter.ToInt64():X}, flags=0x{flags:X}) result={setPosResult}");
+            // 2. Définir la fenêtre comme enfant de SHELLDLL_DefView pour être derrière les icônes
+            //    Si SHELLDLL_DefView introuvable, utiliser Progman
+            IntPtr parentHwnd = shellDefView != IntPtr.Zero ? shellDefView : (progman != IntPtr.Zero ? progman : desktop);
+            SetParent(_hwnd, parentHwnd);
+            Log.Write($"DIAG: SetParent to 0x{parentHwnd.ToInt64():X}");
             
-            // Si SetWindowPos échoue, essayer avec HWND_BOTTOM
-            if (!setPosResult)
-            {
-                setPosResult = SetWindowPos(_hwnd, (IntPtr)1, 0, 0, 0, 0, flags); // HWND_BOTTOM
-                Log.Write($"DIAG: SetWindowPos(HWND_BOTTOM) fallback result={setPosResult}");
-            }
+            // 3. Placer en bas du Z-order de SHELLDLL_DefView
+            uint flags = 0x0002 | 0x0001 | 0x0004; // SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE
+            bool setPosResult = SetWindowPos(_hwnd, (IntPtr)1, 0, 0, 0, 0, flags); // HWND_BOTTOM
+            Log.Write($"DIAG: SetWindowPos(HWND_BOTTOM) result={setPosResult}");
             
             // 3. Enregistrer le hotkey Échap (global, même si la fenêtre n'est pas active)
             bool hotkeyResult = RegisterHotKey(_hwnd, HOTKEY_ID, 0, 0x1B); // VK_ESCAPE
@@ -236,6 +247,9 @@ namespace Voyl
 
         [DllImport("user32.dll")]
         private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
 
         [DllImport("user32.dll")]
         private static extern int GetSystemMetrics(int nIndex);
