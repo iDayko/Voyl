@@ -52,11 +52,11 @@ namespace Voyl
                 lpfnWndProc = _windowProc,
                 cbClsExtra = 0,
                 cbWndExtra = 0,
-                hInstance = GetModuleHandleW(null),
+                hInstance = GetModuleHandleW(null!),
                 hIcon = IntPtr.Zero,
                 hCursor = LoadCursorW(IntPtr.Zero, 32512),
                 hbrBackground = (IntPtr)5,
-                lpszMenuName = null,
+                lpszMenuName = null!,
                 lpszClassName = WindowClassName,
                 hIconSm = IntPtr.Zero
             };
@@ -74,7 +74,7 @@ namespace Voyl
                 100, 100, WindowWidth, WindowHeight,
                 IntPtr.Zero,
                 IntPtr.Zero,
-                GetModuleHandleW(null),
+                GetModuleHandleW(null!),
                 IntPtr.Zero);
         }
 
@@ -122,8 +122,8 @@ namespace Voyl
             public IntPtr hIcon;
             public IntPtr hCursor;
             public IntPtr hbrBackground;
-            public string lpszMenuName;
-            public string lpszClassName;
+            public string? lpszMenuName;
+            public string? lpszClassName;
             public IntPtr hIconSm;
         }
 
@@ -167,7 +167,7 @@ namespace Voyl
         private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-        private static extern IntPtr GetModuleHandleW(string lpModuleName);
+        private static extern IntPtr GetModuleHandleW(string? lpModuleName);
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr LoadCursorW(IntPtr hInstance, int lpCursorName);
