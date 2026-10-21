@@ -34,20 +34,24 @@ namespace Voyl
 
             Log.Write($"DIAG: Voyl HWND=0x{_hwnd.ToInt64():X}");
 
-            // Enregistrer le hotkey Échap (VK_ESCAPE = 0x1B)
-            bool hotkeyResult = RegisterHotKey(_hwnd, HOTKEY_ID, 0, 0x1B);
-            Log.Write($"DIAG: RegisterHotKey result={hotkeyResult}");
-
             // Positionner la fenêtre
             int screenWidth = GetSystemMetrics(0);
             int screenHeight = GetSystemMetrics(1);
             
-            // Placer en bas du Z-order (derrière tout)
-            bool setPosResult = SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0000); // HWND_BOTTOM = 1
+            // 1. Rendre transparente AVANT de montrer
+            bool layeredResult = SetLayeredWindowAttributes(_hwnd, 0, 0, 0x00000002); // LWA_ALPHA
+            Log.Write($"DIAG: SetLayeredWindowAttributes(alpha=0) result={layeredResult}");
+            
+            // 2. Placer en bas du Z-order
+            bool setPosResult = SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0000); // HWND_BOTTOM
             Log.Write($"DIAG: SetWindowPos(HWND_BOTTOM) result={setPosResult}");
             
-            // MONTRER la fenêtre
-            ShowWindow(_hwnd, 1); // SW_SHOWNORMAL
+            // 3. Enregistrer le hotkey Échap
+            bool hotkeyResult = RegisterHotKey(_hwnd, HOTKEY_ID, 0, 0x1B);
+            Log.Write($"DIAG: RegisterHotKey result={hotkeyResult}");
+            
+            // 4. MONTRER la fenêtre
+            ShowWindow(_hwnd, 5); // SW_SHOWNA
             
             bool isVisible = IsWindowVisible(_hwnd);
             Log.Write($"DIAG: IsWindowVisible={isVisible}");
@@ -58,9 +62,7 @@ namespace Voyl
                 DispatchMessageW(ref msg);
             }
 
-            // Désenregistrer le hotkey
             UnregisterHotKey(_hwnd, HOTKEY_ID);
-
             Log.Stop();
             return 0;
         }
@@ -77,7 +79,7 @@ namespace Voyl
                 hInstance = GetModuleHandleW(null!),
                 hIcon = IntPtr.Zero,
                 hCursor = LoadCursorW(IntPtr.Zero, 32512),
-                hbrBackground = (IntPtr)5, // Fond blanc (COLOR_WINDOW+1)
+                hbrBackground = (IntPtr)5, // Fond blanc (invisible avec alpha=0)
                 lpszMenuName = null!,
                 lpszClassName = WindowClassName,
                 hIconSm = IntPtr.Zero
@@ -92,7 +94,7 @@ namespace Voyl
             int screenHeight = GetSystemMetrics(1);
             
             return CreateWindowExW(
-                0x00000080, // WS_EX_TRANSPARENT
+                0x00000020 | 0x00000080, // WS_EX_LAYERED | WS_EX_TRANSPARENT
                 WindowClassName,
                 WindowTitle,
                 0x80000000, // WS_POPUP
@@ -212,6 +214,9 @@ namespace Voyl
 
         [DllImport("user32.dll")]
         private static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
 
         [DllImport("user32.dll")]
         private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
