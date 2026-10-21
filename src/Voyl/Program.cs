@@ -37,19 +37,16 @@ namespace Voyl
             int screenWidth = GetSystemMetrics(0);
             int screenHeight = GetSystemMetrics(1);
             
-            // Rendre la fenêtre transparente aux clics (WS_EX_LAYERED + WS_EX_TRANSPARENT)
-            // Cela permet de voir le bureau à travers et de cliquer sur les icônes
+            // MONTRER la fenêtre D'ABORD
+            ShowWindow(_hwnd, 5); // SW_SHOWNA
+            
+            // Placer en bas du Z-order
             SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0000); // HWND_BOTTOM
             
-            // Activer la transparence : alpha = 1 (opaque) mais LWA_COLORKEY pour rendre transparent
-            // Ici on utilise LWA_ALPHA avec alpha=1 pour garder opaque mais permettre le clic-through
-            // Pour Windows 10/11, il faut utiliser WS_EX_TRANSPARENT dans le style étendu
-            // Mais comme on a déjà WS_EX_LAYERED, on peut utiliser SetLayeredWindowAttributes
-            // Pour l'étape 2, on veut juste voir le bureau : on rend la fenêtre semi-transparente
-            SetLayeredWindowAttributes(_hwnd, 0, 200, 0x00000002); // LWA_ALPHA = 2, alpha=200 (~78% opaque)
-            
-            // MONTRER la fenêtre
-            ShowWindow(_hwnd, 5); // SW_SHOWNA
+            // Rendre la fenêtre complètement transparente (alpha=0) mais toujours présente
+            // LWA_ALPHA = 0x00000002
+            bool layeredResult = SetLayeredWindowAttributes(_hwnd, 0, 0, 0x00000002);
+            Log.Write($"DIAG: SetLayeredWindowAttributes(alpha=0) result={layeredResult}");
             
             bool isVisible = IsWindowVisible(_hwnd);
             Log.Write($"DIAG: IsWindowVisible={isVisible}");
@@ -76,7 +73,7 @@ namespace Voyl
                 hInstance = GetModuleHandleW(null!),
                 hIcon = IntPtr.Zero,
                 hCursor = LoadCursorW(IntPtr.Zero, 32512),
-                hbrBackground = (IntPtr)2, // Fond NOIR
+                hbrBackground = (IntPtr)2, // Fond NOIR (invisible avec alpha=0)
                 lpszMenuName = null!,
                 lpszClassName = WindowClassName,
                 hIconSm = IntPtr.Zero
