@@ -41,23 +41,21 @@ namespace Voyl
             int screenWidth = GetSystemMetrics(0);
             int screenHeight = GetSystemMetrics(1);
             
-            // 1. MONTRER la fenêtre
+            // 1. MONTRER la fenêtre (nécessaire pour SetLayeredWindowAttributes)
             ShowWindow(_hwnd, 5); // SW_SHOWNA
             
-            // 2. Placer derrière le bureau (GetDesktopWindow)
+            // 2. Placer derrière le bureau
             bool setPosResult = SetWindowPos(_hwnd, _desktopHwnd, 0, 0, screenWidth, screenHeight, 0x0000);
             Log.Write($"DIAG: SetWindowPos(desktop) result={setPosResult}");
             
-            // 3. Rendre transparente aux clics
+            // 3. Rendre la fenêtre complètement transparente (alpha=0)
+            // Mais garder WS_EX_TRANSPARENT pour que les clics passent à travers
             bool layeredResult = SetLayeredWindowAttributes(_hwnd, 0, 0, 0x00000002); // LWA_ALPHA
             Log.Write($"DIAG: SetLayeredWindowAttributes(alpha=0) result={layeredResult}");
             
-            // 4. Si transparence échoue, cacher la fenêtre
-            if (!layeredResult)
-            {
-                ShowWindow(_hwnd, 0); // SW_HIDE
-                Log.Write("WARN: Hidden window due to layered failure");
-            }
+            // 4. Forcer la fenêtre à rester active pour recevoir les messages clavier
+            // Même si elle est transparente et derrière le bureau
+            SetForegroundWindow(_hwnd);
             
             bool isVisible = IsWindowVisible(_hwnd);
             Log.Write($"DIAG: IsWindowVisible={isVisible}");
@@ -84,7 +82,7 @@ namespace Voyl
                 hInstance = GetModuleHandleW(null!),
                 hIcon = IntPtr.Zero,
                 hCursor = LoadCursorW(IntPtr.Zero, 32512),
-                hbrBackground = (IntPtr)2, // Fond NOIR
+                hbrBackground = (IntPtr)2, // Fond NOIR (invisible avec alpha=0)
                 lpszMenuName = null!,
                 lpszClassName = WindowClassName,
                 hIconSm = IntPtr.Zero
@@ -216,6 +214,9 @@ namespace Voyl
 
         [DllImport("user32.dll")]
         private static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr GetModuleHandleW(string? lpModuleName);
