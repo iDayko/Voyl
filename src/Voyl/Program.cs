@@ -8,16 +8,19 @@ namespace Voyl
         private const string WindowClassName = "VoylWindowClass";
         private const string WindowTitle = "Voyl";
 
-        // HWND_BOTTOM = (IntPtr)1, HWND_TOPMOST = (IntPtr)-1, HWND_TOP = (IntPtr)0
+        // HWND_BOTTOM = (IntPtr)1
         private static readonly IntPtr HWND_BOTTOM = (IntPtr)1;
 
         private static IntPtr _hwnd = IntPtr.Zero;
+        private static IntPtr _desktopHwnd = IntPtr.Zero;
         private static delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr> _windowProc = &WindowProc;
 
         [STAThread]
         private static int Main()
         {
             Log.Start();
+
+            _desktopHwnd = GetDesktopWindow();
 
             if (!RegisterWindowClass())
             {
@@ -32,10 +35,10 @@ namespace Voyl
                 return 1;
             }
 
-            // Positionner en bas du Z-order (derrière les icônes du bureau)
+            // Positionner derrière les icônes du bureau
             int screenWidth = GetSystemMetrics(0); // SM_CXSCREEN
             int screenHeight = GetSystemMetrics(1); // SM_CYSCREEN
-            SetWindowPos(_hwnd, HWND_BOTTOM, 0, 0, screenWidth, screenHeight, 0x0001 | 0x0002); // SWP_NOACTIVATE | SWP_NOZORDER
+            SetWindowPos(_hwnd, HWND_BOTTOM, 0, 0, screenWidth, screenHeight, 0x0002); // SWP_NOACTIVATE seulement
 
             ShowWindow(_hwnd, 1); // SW_SHOWNORMAL
 
@@ -61,7 +64,7 @@ namespace Voyl
                 hInstance = GetModuleHandleW(null!),
                 hIcon = IntPtr.Zero,
                 hCursor = LoadCursorW(IntPtr.Zero, 32512),
-                hbrBackground = (IntPtr)5,
+                hbrBackground = (IntPtr)4, // COLOR_WINDOW (fond blanc pour visibilité temporaire)
                 lpszMenuName = null!,
                 lpszClassName = WindowClassName,
                 hIconSm = IntPtr.Zero
@@ -77,7 +80,7 @@ namespace Voyl
                 WindowClassName,
                 WindowTitle,
                 0x80000000, // WS_POPUP
-                0, 0, 0, 0, // Position et taille initiales (seront ajustées par SetWindowPos)
+                0, 0, 1, 1, // Taille minimale initiale (sera ajustée par SetWindowPos)
                 IntPtr.Zero,
                 IntPtr.Zero,
                 GetModuleHandleW(null!),
@@ -181,6 +184,9 @@ namespace Voyl
 
         [DllImport("user32.dll")]
         private static extern int GetSystemMetrics(int nIndex);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetDesktopWindow();
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr GetModuleHandleW(string? lpModuleName);
