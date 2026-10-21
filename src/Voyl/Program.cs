@@ -9,16 +9,21 @@ namespace Voyl
         private const string WindowTitle = "Voyl";
 
         private static IntPtr _hwnd = IntPtr.Zero;
-        private static IntPtr _desktopHwnd = IntPtr.Zero;
+        private static IntPtr _hook = IntPtr.Zero;
         private static delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr> _windowProc = &WindowProc;
+        private static delegate* unmanaged<nint, int, IntPtr> _keyboardHookProc = &KeyboardProc;
 
         [STAThread]
         private static int Main()
         {
             Log.Start();
 
-            _desktopHwnd = GetDesktopWindow();
-            Log.Write($"DIAG: Desktop HWND=0x{_desktopHwnd.ToInt64():X}");
+            // Installer le hook clavier global pour Échap
+            _hook = SetWindowsHookExW(13, _keyboardHookProc, IntPtr.Zero, GetModuleHandleW(null!));
+            if (_hook == IntPtr.Zero)
+            {
+                Log.Write("WARN: Failed to install keyboard hook");
+            }
 
             if (!RegisterWindowClass())
             {
@@ -41,21 +46,12 @@ namespace Voyl
             int screenWidth = GetSystemMetrics(0);
             int screenHeight = GetSystemMetrics(1);
             
-            // 1. MONTRER la fenêtre (nécessaire pour SetLayeredWindowAttributes)
-            ShowWindow(_hwnd, 5); // SW_SHOWNA
+            // Placer en bas du Z-order (derrière tout)
+            bool setPosResult = SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0000); // HWND_BOTTOM = 1
+            Log.Write($"DIAG: SetWindowPos(HWND_BOTTOM) result={setPosResult}");
             
-            // 2. Placer derrière le bureau
-            bool setPosResult = SetWindowPos(_hwnd, _desktopHwnd, 0, 0, screenWidth, screenHeight, 0x0000);
-            Log.Write($"DIAG: SetWindowPos(desktop) result={setPosResult}");
-            
-            // 3. Rendre la fenêtre complètement transparente (alpha=0)
-            // Mais garder WS_EX_TRANSPARENT pour que les clics passent à travers
-            bool layeredResult = SetLayeredWindowAttributes(_hwnd, 0, 0, 0x00000002); // LWA_ALPHA
-            Log.Write($"DIAG: SetLayeredWindowAttributes(alpha=0) result={layeredResult}");
-            
-            // 4. Forcer la fenêtre à rester active pour recevoir les messages clavier
-            // Même si elle est transparente et derrière le bureau
-            SetForegroundWindow(_hwnd);
+            // MONTRER la fenêtre
+            ShowWindow(_hwnd, 1); // SW_SHOWNORMAL
             
             bool isVisible = IsWindowVisible(_hwnd);
             Log.Write($"DIAG: IsWindowVisible={isVisible}");
@@ -64,6 +60,12 @@ namespace Voyl
             {
                 TranslateMessage(ref msg);
                 DispatchMessageW(ref msg);
+            }
+
+            // Désinstaller le hook
+            if (_hook != IntPtr.Zero)
+            {
+                UnhookWindowsHookEx(_hook);
             }
 
             Log.Stop();
@@ -82,7 +84,7 @@ namespace Voyl
                 hInstance = GetModuleHandleW(null!),
                 hIcon = IntPtr.Zero,
                 hCursor = LoadCursorW(IntPtr.Zero, 32512),
-                hbrBackground = (IntPtr)2, // Fond NOIR (invisible avec alpha=0)
+                hbrBackground = (IntPtr)5, // Fond blanc (COLOR_WINDOW+1)
                 lpszMenuName = null!,
                 lpszClassName = WindowClassName,
                 hIconSm = IntPtr.Zero
@@ -97,7 +99,7 @@ namespace Voyl
             int screenHeight = GetSystemMetrics(1);
             
             return CreateWindowExW(
-                0x00000020 | 0x00000080, // WS_EX_LAYERED | WS_EX_TRANSPARENT
+                0x00000080, // WS_EX_TRANSPARENT
                 WindowClassName,
                 WindowTitle,
                 0x80000000, // WS_POPUP
@@ -142,6 +144,20 @@ namespace Voyl
             }
 
             return DefWindowProcW(hWnd, msg, wParam, lParam);
+        }
+
+        [UnmanagedCallersOnly]
+        private static IntPtr KeyboardProc(int nCode, IntPtr wParam, IntPtr lParam)
+        {
+            if (nCode >= 0)
+            {
+                if (wParam.ToInt32() == 0x0100 && Marshal.ReadInt32(lParam) == 0x1B) // WM_KEYDOWN && VK_ESCAPE
+                {
+                    PostQuitMessage(0);
+                    return (IntPtr)1; // Bloquer le message
+                }
+            }
+            return CallNextHookEx(_hook, nCode, wParam, lParam);
         }
 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
@@ -207,16 +223,16 @@ namespace Voyl
         private static extern int GetSystemMetrics(int nIndex);
 
         [DllImport("user32.dll")]
-        private static extern IntPtr GetDesktopWindow();
-
-        [DllImport("user32.dll")]
         private static extern bool IsWindowVisible(IntPtr hWnd);
 
         [DllImport("user32.dll")]
-        private static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
+        private static extern IntPtr SetWindowsHookExW(int idHook, delegate* unmanaged<nint, int, IntPtr> lpfn, IntPtr hMod, IntPtr dwThreadId);
 
         [DllImport("user32.dll")]
-        private static extern bool SetForegroundWindow(IntPtr hWnd);
+        private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr GetModuleHandleW(string? lpModuleName);
