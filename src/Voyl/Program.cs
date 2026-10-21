@@ -34,23 +34,27 @@ namespace Voyl
 
             Log.Write($"DIAG: Voyl HWND=0x{_hwnd.ToInt64():X}");
 
-            // Positionner la fenêtre
+            // Positionner la fenêtre derrière le bureau
             int screenWidth = GetSystemMetrics(0);
             int screenHeight = GetSystemMetrics(1);
             
-            // 1. MONTRER la fenêtre D'ABORD (nécessaire pour SetLayeredWindowAttributes)
+            // Trouver Progman (fenêtre du bureau) et SysListView32 (icônes)
+            IntPtr desktop = GetDesktopWindow();
+            IntPtr progman = GetWindow(desktop, 5); // GW_CHILD
+            IntPtr sysListView32 = FindWindowEx(progman, IntPtr.Zero, "SysListView32", null);
+            
+            Log.Write($"DIAG: Desktop=0x{desktop.ToInt64():X}, Progman=0x{progman.ToInt64():X}, SysListView32=0x{sysListView32.ToInt64():X}");
+            
+            // 1. MONTRER la fenêtre (nécessaire avant SetWindowPos)
             ShowWindow(_hwnd, 5); // SW_SHOWNA
             
-            // 2. Rendre transparente
-            bool layeredResult = SetLayeredWindowAttributes(_hwnd, 0, 0, 0x00000002); // LWA_ALPHA
-            Log.Write($"DIAG: SetLayeredWindowAttributes(alpha=0) result={layeredResult}");
+            // 2. Placer derrière SysListView32 (icônes) ou Progman si SysListView32 introuvable
+            IntPtr insertAfter = sysListView32 != IntPtr.Zero ? sysListView32 : (progman != IntPtr.Zero ? progman : (IntPtr)1); // HWND_BOTTOM = 1
+            bool setPosResult = SetWindowPos(_hwnd, insertAfter, 0, 0, screenWidth, screenHeight, 0x0002 | 0x0001); // SWP_NOACTIVATE | SWP_NOMOVE
+            Log.Write($"DIAG: SetWindowPos(insertAfter=0x{insertAfter.ToInt64():X}) result={setPosResult}");
             
-            // 3. Placer en bas du Z-order
-            bool setPosResult = SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0000); // HWND_BOTTOM
-            Log.Write($"DIAG: SetWindowPos(HWND_BOTTOM) result={setPosResult}");
-            
-            // 4. Enregistrer le hotkey Échap
-            bool hotkeyResult = RegisterHotKey(_hwnd, HOTKEY_ID, 0, 0x1B);
+            // 3. Enregistrer le hotkey Échap (global, même si la fenêtre n'est pas active)
+            bool hotkeyResult = RegisterHotKey(_hwnd, HOTKEY_ID, 0, 0x1B); // VK_ESCAPE
             Log.Write($"DIAG: RegisterHotKey result={hotkeyResult}");
 
             bool isVisible = IsWindowVisible(_hwnd);
@@ -79,7 +83,7 @@ namespace Voyl
                 hInstance = GetModuleHandleW(null!),
                 hIcon = IntPtr.Zero,
                 hCursor = LoadCursorW(IntPtr.Zero, 32512),
-                hbrBackground = (IntPtr)5, // Fond blanc (invisible avec alpha=0)
+                hbrBackground = (IntPtr)5, // Fond blanc
                 lpszMenuName = null!,
                 lpszClassName = WindowClassName,
                 hIconSm = IntPtr.Zero
@@ -216,13 +220,19 @@ namespace Voyl
         private static extern bool IsWindowVisible(IntPtr hWnd);
 
         [DllImport("user32.dll")]
-        private static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
-
-        [DllImport("user32.dll")]
         private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
 
         [DllImport("user32.dll")]
         private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetDesktopWindow();
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr FindWindowEx(IntPtr hWndParent, IntPtr hWndChildAfter, string lpszClass, string? lpszWindow);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr GetModuleHandleW(string? lpModuleName);
