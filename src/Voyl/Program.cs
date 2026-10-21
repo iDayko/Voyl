@@ -12,6 +12,7 @@ namespace Voyl
         private static IntPtr _hwnd = IntPtr.Zero;
         private static IntPtr _progmanHwnd = IntPtr.Zero;
         private static IntPtr _sysListHwnd = IntPtr.Zero;
+        private static IntPtr _desktopHwnd = IntPtr.Zero;
         private static delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr> _windowProc = &WindowProc;
 
         [STAThread]
@@ -20,40 +21,24 @@ namespace Voyl
             Log.Start();
 
             // Attendre que le bureau soit prêt
-            Thread.Sleep(1000);
+            Thread.Sleep(2000);
 
-            // Obtenir Progman
+            _desktopHwnd = GetDesktopWindow();
             _progmanHwnd = FindWindowW("Progman", "Program Manager");
             
-            // Chercher SysListView32: d'abord enfant direct de Progman, puis parmi tous les enfants
+            // Chercher SysListView32 parmi tous les enfants de Progman (récursif)
             if (_progmanHwnd != IntPtr.Zero)
             {
-                _sysListHwnd = FindWindowExW(_progmanHwnd, IntPtr.Zero, "SysListView32", null);
-                
-                // Si pas trouvé directement, chercher parmi tous les enfants récursivement
-                if (_sysListHwnd == IntPtr.Zero)
-                {
-                    IntPtr child = IntPtr.Zero;
-                    while (true)
-                    {
-                        child = FindWindowExW(_progmanHwnd, child, null, null);
-                        if (child == IntPtr.Zero) break;
-                        
-                        IntPtr grandChild = FindWindowExW(child, IntPtr.Zero, "SysListView32", null);
-                        if (grandChild != IntPtr.Zero)
-                        {
-                            _sysListHwnd = grandChild;
-                            break;
-                        }
-                    }
-                }
-                
-                Log.Write($"DIAG: Progman=0x{_progmanHwnd.ToInt64():X}, SysListView32=0x{_sysListHwnd.ToInt64():X}");
+                _sysListHwnd = FindSysListView32(_progmanHwnd);
             }
-            else
+            
+            // Si toujours pas trouvé, chercher dans tout le système
+            if (_sysListHwnd == IntPtr.Zero)
             {
-                Log.Write("DIAG: Progman not found");
+                _sysListHwnd = FindWindowW("SysListView32", null);
             }
+            
+            Log.Write($"DIAG: Desktop=0x{_desktopHwnd.ToInt64():X}, Progman=0x{_progmanHwnd.ToInt64():X}, SysListView32=0x{_sysListHwnd.ToInt64():X}");
 
             if (!RegisterWindowClass())
             {
@@ -74,13 +59,12 @@ namespace Voyl
             int screenWidth = GetSystemMetrics(0);
             int screenHeight = GetSystemMetrics(1);
             
-            // Stratégie: 
-            // 1. Si SysListView32 trouvé → se placer DEVANT lui (pour être derrière les icônes mais visible)
-            // 2. Sinon → HWND_BOTTOM
-            IntPtr insertAfter = _sysListHwnd != IntPtr.Zero ? _sysListHwnd : (IntPtr)1; // HWND_BOTTOM
+            // TEST: Placer TEMPORAIREMENT au TOPMOST pour VÉRIFIER que la fenêtre existe
+            SetWindowPos(_hwnd, (IntPtr)(-1), 0, 0, screenWidth, screenHeight, 0x0000);
             
-            bool result = SetWindowPos(_hwnd, insertAfter, 0, 0, screenWidth, screenHeight, 0x0001); // SWP_NOACTIVATE
-            Log.Write($"DIAG: SetWindowPos result={result}, insertAfter=0x{insertAfter.ToInt64():X}");
+            // Vérifier que la fenêtre est visible
+            bool isVisible = IsWindowVisible(_hwnd);
+            Log.Write($"DIAG: IsWindowVisible={isVisible}");
 
             ShowWindow(_hwnd, 1);
 
@@ -92,6 +76,31 @@ namespace Voyl
 
             Log.Stop();
             return 0;
+        }
+
+        private static IntPtr FindSysListView32(IntPtr parentHwnd)
+        {
+            IntPtr child = IntPtr.Zero;
+            while (true)
+            {
+                child = FindWindowExW(parentHwnd, child, null, null);
+                if (child == IntPtr.Zero) break;
+                
+                // Vérifier si cet enfant est SysListView32
+                IntPtr result = FindWindowExW(child, IntPtr.Zero, "SysListView32", null);
+                if (result != IntPtr.Zero)
+                {
+                    return result;
+                }
+                
+                // Chercher récursivement
+                result = FindSysListView32(child);
+                if (result != IntPtr.Zero)
+                {
+                    return result;
+                }
+            }
+            return IntPtr.Zero;
         }
 
         private static bool RegisterWindowClass()
@@ -106,7 +115,7 @@ namespace Voyl
                 hInstance = GetModuleHandleW(null!),
                 hIcon = IntPtr.Zero,
                 hCursor = LoadCursorW(IntPtr.Zero, 32512),
-                hbrBackground = (IntPtr)4, // Fond blanc pour visibilité
+                hbrBackground = (IntPtr)2, // COLOR_WINDOW+0 = fond NOIR (très visible)
                 lpszMenuName = null!,
                 lpszClassName = WindowClassName,
                 hIconSm = IntPtr.Zero
@@ -122,7 +131,7 @@ namespace Voyl
                 WindowClassName,
                 WindowTitle,
                 0x80000000, // WS_POPUP
-                0, 0, 1, 1,
+                0, 0, screenWidth, screenHeight, // Taille écran dès la création
                 IntPtr.Zero,
                 IntPtr.Zero,
                 GetModuleHandleW(null!),
@@ -164,6 +173,10 @@ namespace Voyl
 
             return DefWindowProcW(hWnd, msg, wParam, lParam);
         }
+
+        // Win32 constants
+        private static int screenWidth = GetSystemMetrics(0);
+        private static int screenHeight = GetSystemMetrics(1);
 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         private struct WNDCLASSEXW
@@ -227,11 +240,17 @@ namespace Voyl
         [DllImport("user32.dll")]
         private static extern int GetSystemMetrics(int nIndex);
 
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetDesktopWindow();
+
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr FindWindowW(string lpClassName, string? lpWindowName);
 
         [DllImport("user32.dll")]
         private static extern IntPtr FindWindowExW(IntPtr hWndParent, IntPtr hWndChildAfter, string lpClassName, string? lpWindowName);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr GetModuleHandleW(string? lpModuleName);
