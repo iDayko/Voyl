@@ -10,6 +10,7 @@ namespace Voyl
 
         private static IntPtr _hwnd = IntPtr.Zero;
         private static IntPtr _progmanHwnd = IntPtr.Zero;
+        private static IntPtr _sysListHwnd = IntPtr.Zero;
         private static delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr> _windowProc = &WindowProc;
 
         [STAThread]
@@ -17,13 +18,10 @@ namespace Voyl
         {
             Log.Start();
 
-            // Obtenir le HWND de Progman (fenêtre du bureau qui contient les icônes)
+            // Diagnostics: trouver les fenêtres du bureau
             _progmanHwnd = FindWindowW("Progman", "Program Manager");
-            if (_progmanHwnd == IntPtr.Zero)
-            {
-                // Essayons avec le nom de classe "SysListView32" (pour les icônes du bureau)
-                _progmanHwnd = FindWindowW("SysListView32", null);
-            }
+            _sysListHwnd = FindWindowW("SysListView32", null);
+            Log.Write($"DIAG: Progman=0x{_progmanHwnd.ToInt64():X}, SysListView32=0x{_sysListHwnd.ToInt64():X}");
 
             if (!RegisterWindowClass())
             {
@@ -38,22 +36,16 @@ namespace Voyl
                 return 1;
             }
 
-            // Positionner derrière les icônes du bureau
-            int screenWidth = GetSystemMetrics(0); // SM_CXSCREEN
-            int screenHeight = GetSystemMetrics(1); // SM_CYSCREEN
-            
-            // Si on a trouvé Progman, on se place derrière
-            if (_progmanHwnd != IntPtr.Zero)
-            {
-                SetWindowPos(_hwnd, _progmanHwnd, 0, 0, screenWidth, screenHeight, 0x0001); // SWP_NOACTIVATE
-            }
-            else
-            {
-                // Sinon, on tente HWND_BOTTOM
-                SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0001); // HWND_BOTTOM
-            }
+            Log.Write($"DIAG: Voyl HWND=0x{_hwnd.ToInt64():X}");
 
-            ShowWindow(_hwnd, 1); // SW_SHOWNORMAL
+            // Positionner la fenêtre
+            int screenWidth = GetSystemMetrics(0);
+            int screenHeight = GetSystemMetrics(1);
+            
+            // Temporairement: placer DEVANT pour vérification (HWND_TOPMOST)
+            SetWindowPos(_hwnd, (IntPtr)(-1), 0, 0, screenWidth, screenHeight, 0x0001 | 0x0002);
+
+            ShowWindow(_hwnd, 1);
 
             while (GetMessageW(out var msg, IntPtr.Zero, 0, 0))
             {
@@ -77,7 +69,7 @@ namespace Voyl
                 hInstance = GetModuleHandleW(null!),
                 hIcon = IntPtr.Zero,
                 hCursor = LoadCursorW(IntPtr.Zero, 32512),
-                hbrBackground = (IntPtr)4, // COLOR_WINDOW (fond blanc)
+                hbrBackground = (IntPtr)4, // Fond blanc
                 lpszMenuName = null!,
                 lpszClassName = WindowClassName,
                 hIconSm = IntPtr.Zero
@@ -93,7 +85,7 @@ namespace Voyl
                 WindowClassName,
                 WindowTitle,
                 0x80000000, // WS_POPUP
-                0, 0, 1, 1, // Taille minimale initiale
+                0, 0, 1, 1,
                 IntPtr.Zero,
                 IntPtr.Zero,
                 GetModuleHandleW(null!),
