@@ -11,6 +11,7 @@ namespace Voyl
 
         private static IntPtr _hwnd = IntPtr.Zero;
         private static IntPtr _progmanHwnd = IntPtr.Zero;
+        private static IntPtr _workerWHwnd = IntPtr.Zero;
         private static IntPtr _sysListHwnd = IntPtr.Zero;
         private static IntPtr _desktopHwnd = IntPtr.Zero;
         private static delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr> _windowProc = &WindowProc;
@@ -26,23 +27,34 @@ namespace Voyl
             _desktopHwnd = GetDesktopWindow();
             _progmanHwnd = FindWindowW("Progman", "Program Manager");
             
-            // Forcer la création de SysListView32 en envoyant WM_PRINTCLIENT à Progman
+            // Chercher WorkerW (fenêtre worker de Progman sur Win10/11)
             if (_progmanHwnd != IntPtr.Zero)
             {
-                SendMessageW(_progmanHwnd, 0x0317, IntPtr.Zero, IntPtr.Zero); // WM_PRINTCLIENT = 0x0317
-                Thread.Sleep(500); // Attendre que SysListView32 soit créé
+                // Envoyer WM_PRINTCLIENT pour forcer la création de la hiérarchie
+                SendMessageW(_progmanHwnd, 0x0317, IntPtr.Zero, IntPtr.Zero); // WM_PRINTCLIENT
+                Thread.Sleep(500);
                 
-                // Maintenant chercher SysListView32
-                _sysListHwnd = FindWindowExW(_progmanHwnd, IntPtr.Zero, "SysListView32", null);
+                // Chercher WorkerW (premier enfant de Progman)
+                _workerWHwnd = FindWindowExW(_progmanHwnd, IntPtr.Zero, "WorkerW", null);
                 
-                // Chercher récursivement si pas trouvé directement
-                if (_sysListHwnd == IntPtr.Zero)
+                // Si WorkerW trouvé, chercher SysListView32 dedans
+                if (_workerWHwnd != IntPtr.Zero)
+                {
+                    _sysListHwnd = FindWindowExW(_workerWHwnd, IntPtr.Zero, "SysListView32", null);
+                }
+                
+                // Si toujours pas trouvé, chercher récursivement
+                if (_sysListHwnd == IntPtr.Zero && _workerWHwnd != IntPtr.Zero)
+                {
+                    _sysListHwnd = FindSysListView32(_workerWHwnd);
+                }
+                else if (_sysListHwnd == IntPtr.Zero)
                 {
                     _sysListHwnd = FindSysListView32(_progmanHwnd);
                 }
             }
             
-            Log.Write($"DIAG: Desktop=0x{_desktopHwnd.ToInt64():X}, Progman=0x{_progmanHwnd.ToInt64():X}, SysListView32=0x{_sysListHwnd.ToInt64():X}");
+            Log.Write($"DIAG: Desktop=0x{_desktopHwnd.ToInt64():X}, Progman=0x{_progmanHwnd.ToInt64():X}, WorkerW=0x{_workerWHwnd.ToInt64():X}, SysListView32=0x{_sysListHwnd.ToInt64():X}");
 
             if (!RegisterWindowClass())
             {
@@ -65,31 +77,25 @@ namespace Voyl
             
             ShowWindow(_hwnd, 5); // SW_SHOWNA
             
-            // Stratégie finale:
-            // 1. Si SysListView32 trouvé -> se placer DEVANT lui (pour être derrière les icônes)
-            // 2. Sinon si Progman trouvé -> se placer DEVANT Progman
-            // 3. Sinon -> HWND_BOTTOM
-            IntPtr insertAfter = IntPtr.Zero;
-            if (_sysListHwnd != IntPtr.Zero)
+            // Stratégie: Faire de Voyl un enfant de WorkerW (ou Progman) et le placer en bas du Z-order
+            if (_workerWHwnd != IntPtr.Zero)
             {
-                insertAfter = _sysListHwnd;
-                Log.Write("DIAG: Positioning behind SysListView32");
+                SetParent(_hwnd, _workerWHwnd);
+                Log.Write("DIAG: SetParent to WorkerW");
+                SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0001); // HWND_BOTTOM, SWP_NOACTIVATE
             }
             else if (_progmanHwnd != IntPtr.Zero)
             {
-                insertAfter = _progmanHwnd;
-                Log.Write("DIAG: Positioning behind Progman");
+                SetParent(_hwnd, _progmanHwnd);
+                Log.Write("DIAG: SetParent to Progman");
+                SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0001);
             }
             else
             {
-                insertAfter = (IntPtr)1; // HWND_BOTTOM
-                Log.Write("DIAG: Positioning at HWND_BOTTOM");
+                // Fallback: HWND_BOTTOM global
+                SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0001);
+                Log.Write("DIAG: SetWindowPos(HWND_BOTTOM) global");
             }
-            
-            // SWP_NOACTIVATE = 0x0010, SWP_NOZORDER = 0x0004
-            // On utilise AUCUN flag pour forcer le repositionnement complet
-            bool setPosResult = SetWindowPos(_hwnd, insertAfter, 0, 0, screenWidth, screenHeight, 0x0000);
-            Log.Write($"DIAG: SetWindowPos(insertAfter=0x{insertAfter.ToInt64():X}) result={setPosResult}");
             
             // Vérifier
             bool isVisible = IsWindowVisible(_hwnd);
@@ -113,14 +119,12 @@ namespace Voyl
                 child = FindWindowExW(parentHwnd, child, null, null);
                 if (child == IntPtr.Zero) break;
                 
-                // Vérifier si cet enfant est SysListView32
                 IntPtr result = FindWindowExW(child, IntPtr.Zero, "SysListView32", null);
                 if (result != IntPtr.Zero)
                 {
                     return result;
                 }
                 
-                // Chercher récursivement
                 result = FindSysListView32(child);
                 if (result != IntPtr.Zero)
                 {
@@ -262,6 +266,9 @@ namespace Voyl
 
         [DllImport("user32.dll")]
         private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
 
         [DllImport("user32.dll")]
         private static extern int GetSystemMetrics(int nIndex);
