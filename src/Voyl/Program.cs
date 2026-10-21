@@ -59,15 +59,22 @@ namespace Voyl
             int screenWidth = GetSystemMetrics(0);
             int screenHeight = GetSystemMetrics(1);
             
-            // TEST: Placer TEMPORAIREMENT au TOPMOST pour VÉRIFIER que la fenêtre existe
-            SetWindowPos(_hwnd, (IntPtr)(-1), 0, 0, screenWidth, screenHeight, 0x0000);
+            // MONTRER la fenêtre AVANT de la positionner
+            ShowWindow(_hwnd, 5); // SW_SHOWNA = 5
             
-            // Vérifier que la fenêtre est visible
-            bool isVisible = IsWindowVisible(_hwnd);
-            Log.Write($"DIAG: IsWindowVisible={isVisible}");
+            // Vérifier qu'elle est visible
+            bool isVisibleBefore = IsWindowVisible(_hwnd);
+            Log.Write($"DIAG: IsWindowVisible before SetWindowPos={isVisibleBefore}");
+            
+            // TEST: Placer TEMPORAIREMENT au TOPMOST pour VÉRIFIER que la fenêtre existe
+            bool setPosResult = SetWindowPos(_hwnd, (IntPtr)(-1), 0, 0, screenWidth, screenHeight, 0x0000);
+            Log.Write($"DIAG: SetWindowPos result={setPosResult}");
+            
+            // Vérifier après
+            bool isVisibleAfter = IsWindowVisible(_hwnd);
+            Log.Write($"DIAG: IsWindowVisible after SetWindowPos={isVisibleAfter}");
 
-            ShowWindow(_hwnd, 1);
-
+            // Boucle de messages
             while (GetMessageW(out var msg, IntPtr.Zero, 0, 0))
             {
                 TranslateMessage(ref msg);
@@ -115,7 +122,7 @@ namespace Voyl
                 hInstance = GetModuleHandleW(null!),
                 hIcon = IntPtr.Zero,
                 hCursor = LoadCursorW(IntPtr.Zero, 32512),
-                hbrBackground = (IntPtr)2, // COLOR_WINDOW+0 = fond NOIR (très visible)
+                hbrBackground = (IntPtr)2, // Fond NOIR
                 lpszMenuName = null!,
                 lpszClassName = WindowClassName,
                 hIconSm = IntPtr.Zero
@@ -126,12 +133,15 @@ namespace Voyl
 
         private static IntPtr CreateWindow()
         {
+            int screenWidth = GetSystemMetrics(0);
+            int screenHeight = GetSystemMetrics(1);
+            
             return CreateWindowExW(
                 0,
                 WindowClassName,
                 WindowTitle,
                 0x80000000, // WS_POPUP
-                0, 0, screenWidth, screenHeight, // Taille écran dès la création
+                0, 0, screenWidth, screenHeight,
                 IntPtr.Zero,
                 IntPtr.Zero,
                 GetModuleHandleW(null!),
@@ -173,10 +183,6 @@ namespace Voyl
 
             return DefWindowProcW(hWnd, msg, wParam, lParam);
         }
-
-        // Win32 constants
-        private static int screenWidth = GetSystemMetrics(0);
-        private static int screenHeight = GetSystemMetrics(1);
 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         private struct WNDCLASSEXW
