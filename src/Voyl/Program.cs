@@ -20,7 +20,7 @@ namespace Voyl
 
             // Diagnostics: trouver les fenêtres du bureau
             _progmanHwnd = FindWindowW("Progman", "Program Manager");
-            _sysListHwnd = FindWindowW("SysListView32", null);
+            _sysListHwnd = FindWindowExW(_progmanHwnd, IntPtr.Zero, "SysListView32", null);
             Log.Write($"DIAG: Progman=0x{_progmanHwnd.ToInt64():X}, SysListView32=0x{_sysListHwnd.ToInt64():X}");
 
             if (!RegisterWindowClass())
@@ -43,7 +43,7 @@ namespace Voyl
             int screenHeight = GetSystemMetrics(1);
             
             // Temporairement: placer DEVANT pour vérification (HWND_TOPMOST)
-            SetWindowPos(_hwnd, (IntPtr)(-1), 0, 0, screenWidth, screenHeight, 0x0001 | 0x0002);
+            SetWindowPos(_hwnd, (IntPtr)(-1), 0, 0, screenWidth, screenHeight, 0x0000); // Aucun flag = applique tout
 
             ShowWindow(_hwnd, 1);
 
@@ -192,6 +192,9 @@ namespace Voyl
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr FindWindowW(string lpClassName, string? lpWindowName);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr FindWindowExW(IntPtr hWndParent, IntPtr hWndChildAfter, string lpClassName, string? lpWindowName);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr GetModuleHandleW(string? lpModuleName);
