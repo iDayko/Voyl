@@ -70,7 +70,7 @@ namespace Voyl
                 0,
                 WindowClassName,
                 WindowTitle,
-                0x80000000 | 0x00080000,
+                0x00CF0000, // WS_OVERLAPPEDWINDOW
                 100, 100, WindowWidth, WindowHeight,
                 IntPtr.Zero,
                 IntPtr.Zero,
