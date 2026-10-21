@@ -9,12 +9,16 @@ namespace Voyl
         private const string WindowTitle = "Voyl";
 
         private static IntPtr _hwnd = IntPtr.Zero;
+        private static IntPtr _desktopHwnd = IntPtr.Zero;
         private static delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr> _windowProc = &WindowProc;
 
         [STAThread]
         private static int Main()
         {
             Log.Start();
+
+            _desktopHwnd = GetDesktopWindow();
+            Log.Write($"DIAG: Desktop HWND=0x{_desktopHwnd.ToInt64():X}");
 
             if (!RegisterWindowClass())
             {
@@ -37,17 +41,23 @@ namespace Voyl
             int screenWidth = GetSystemMetrics(0);
             int screenHeight = GetSystemMetrics(1);
             
-            // 1. Rendre la fenêtre layered avec alpha=0 (transparente)
-            // LWA_ALPHA = 0x00000002
-            bool layeredResult = SetLayeredWindowAttributes(_hwnd, 0, 0, 0x00000002);
+            // 1. MONTRER la fenêtre
+            ShowWindow(_hwnd, 5); // SW_SHOWNA
+            
+            // 2. Placer derrière le bureau (GetDesktopWindow)
+            bool setPosResult = SetWindowPos(_hwnd, _desktopHwnd, 0, 0, screenWidth, screenHeight, 0x0000);
+            Log.Write($"DIAG: SetWindowPos(desktop) result={setPosResult}");
+            
+            // 3. Rendre transparente aux clics
+            bool layeredResult = SetLayeredWindowAttributes(_hwnd, 0, 0, 0x00000002); // LWA_ALPHA
             Log.Write($"DIAG: SetLayeredWindowAttributes(alpha=0) result={layeredResult}");
             
-            // 2. Placer en bas du Z-order
-            bool setPosResult = SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0000);
-            Log.Write($"DIAG: SetWindowPos(HWND_BOTTOM) result={setPosResult}");
-            
-            // 3. MONTRER la fenêtre (après avoir tout configuré)
-            ShowWindow(_hwnd, 5); // SW_SHOWNA
+            // 4. Si transparence échoue, cacher la fenêtre
+            if (!layeredResult)
+            {
+                ShowWindow(_hwnd, 0); // SW_HIDE
+                Log.Write("WARN: Hidden window due to layered failure");
+            }
             
             bool isVisible = IsWindowVisible(_hwnd);
             Log.Write($"DIAG: IsWindowVisible={isVisible}");
@@ -74,7 +84,7 @@ namespace Voyl
                 hInstance = GetModuleHandleW(null!),
                 hIcon = IntPtr.Zero,
                 hCursor = LoadCursorW(IntPtr.Zero, 32512),
-                hbrBackground = (IntPtr)2, // Fond NOIR (invisible avec alpha=0)
+                hbrBackground = (IntPtr)2, // Fond NOIR
                 lpszMenuName = null!,
                 lpszClassName = WindowClassName,
                 hIconSm = IntPtr.Zero
@@ -197,6 +207,9 @@ namespace Voyl
 
         [DllImport("user32.dll")]
         private static extern int GetSystemMetrics(int nIndex);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetDesktopWindow();
 
         [DllImport("user32.dll")]
         private static extern bool IsWindowVisible(IntPtr hWnd);
