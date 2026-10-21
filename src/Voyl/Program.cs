@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace Voyl
 {
@@ -18,13 +19,35 @@ namespace Voyl
         {
             Log.Start();
 
-            // Obtenir Progman (fenêtre parente du bureau)
+            // Attendre que le bureau soit prêt
+            Thread.Sleep(1000);
+
+            // Obtenir Progman
             _progmanHwnd = FindWindowW("Progman", "Program Manager");
             
-            // Chercher SysListView32 parmi les enfants de Progman
+            // Chercher SysListView32: d'abord enfant direct de Progman, puis parmi tous les enfants
             if (_progmanHwnd != IntPtr.Zero)
             {
                 _sysListHwnd = FindWindowExW(_progmanHwnd, IntPtr.Zero, "SysListView32", null);
+                
+                // Si pas trouvé directement, chercher parmi tous les enfants récursivement
+                if (_sysListHwnd == IntPtr.Zero)
+                {
+                    IntPtr child = IntPtr.Zero;
+                    while (true)
+                    {
+                        child = FindWindowExW(_progmanHwnd, child, null, null);
+                        if (child == IntPtr.Zero) break;
+                        
+                        IntPtr grandChild = FindWindowExW(child, IntPtr.Zero, "SysListView32", null);
+                        if (grandChild != IntPtr.Zero)
+                        {
+                            _sysListHwnd = grandChild;
+                            break;
+                        }
+                    }
+                }
+                
                 Log.Write($"DIAG: Progman=0x{_progmanHwnd.ToInt64():X}, SysListView32=0x{_sysListHwnd.ToInt64():X}");
             }
             else
@@ -51,14 +74,12 @@ namespace Voyl
             int screenWidth = GetSystemMetrics(0);
             int screenHeight = GetSystemMetrics(1);
             
-            // Essayer de se placer derrière SysListView32 (icônes) si trouvé
-            // Sinon derrière Progman, sinon HWND_BOTTOM
-            IntPtr insertAfter = _sysListHwnd != IntPtr.Zero ? _sysListHwnd : 
-                              (_progmanHwnd != IntPtr.Zero ? _progmanHwnd : (IntPtr)1); // HWND_BOTTOM = 1
+            // Stratégie: 
+            // 1. Si SysListView32 trouvé → se placer DEVANT lui (pour être derrière les icônes mais visible)
+            // 2. Sinon → HWND_BOTTOM
+            IntPtr insertAfter = _sysListHwnd != IntPtr.Zero ? _sysListHwnd : (IntPtr)1; // HWND_BOTTOM
             
-            // SWP_NOACTIVATE = 0x0010, SWP_NOZORDER = 0x0004
-            // On utilise AUCUN flag pour forcer le repositionnement
-            bool result = SetWindowPos(_hwnd, insertAfter, 0, 0, screenWidth, screenHeight, 0);
+            bool result = SetWindowPos(_hwnd, insertAfter, 0, 0, screenWidth, screenHeight, 0x0001); // SWP_NOACTIVATE
             Log.Write($"DIAG: SetWindowPos result={result}, insertAfter=0x{insertAfter.ToInt64():X}");
 
             ShowWindow(_hwnd, 1);
