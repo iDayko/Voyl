@@ -11,7 +11,7 @@ namespace Voyl
         private static IntPtr _hwnd = IntPtr.Zero;
         private static IntPtr _hook = IntPtr.Zero;
         private static delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr> _windowProc = &WindowProc;
-        private static delegate* unmanaged<nint, int, IntPtr> _keyboardHookProc = &KeyboardProc;
+        private static delegate* unmanaged<nint, int, nint> _keyboardHookProc = &KeyboardProc;
 
         [STAThread]
         private static int Main()
@@ -19,7 +19,7 @@ namespace Voyl
             Log.Start();
 
             // Installer le hook clavier global pour Échap
-            _hook = SetWindowsHookExW(13, _keyboardHookProc, IntPtr.Zero, GetModuleHandleW(null!));
+            _hook = SetWindowsHookExW(13, _keyboardHookProc, GetModuleHandleW(null!), 0);
             if (_hook == IntPtr.Zero)
             {
                 Log.Write("WARN: Failed to install keyboard hook");
@@ -151,10 +151,14 @@ namespace Voyl
         {
             if (nCode >= 0)
             {
-                if (wParam.ToInt32() == 0x0100 && Marshal.ReadInt32(lParam) == 0x1B) // WM_KEYDOWN && VK_ESCAPE
+                if (wParam.ToInt32() == 0x0100) // WM_KEYDOWN
                 {
-                    PostQuitMessage(0);
-                    return (IntPtr)1; // Bloquer le message
+                    int vkCode = Marshal.ReadInt32(lParam);
+                    if (vkCode == 0x1B) // VK_ESCAPE
+                    {
+                        PostQuitMessage(0);
+                        return (IntPtr)1; // Bloquer le message
+                    }
                 }
             }
             return CallNextHookEx(_hook, nCode, wParam, lParam);
@@ -226,7 +230,7 @@ namespace Voyl
         private static extern bool IsWindowVisible(IntPtr hWnd);
 
         [DllImport("user32.dll")]
-        private static extern IntPtr SetWindowsHookExW(int idHook, delegate* unmanaged<nint, int, IntPtr> lpfn, IntPtr hMod, IntPtr dwThreadId);
+        private static extern IntPtr SetWindowsHookExW(int idHook, delegate* unmanaged<nint, int, nint> lpfn, IntPtr hMod, int dwThreadId);
 
         [DllImport("user32.dll")]
         private static extern bool UnhookWindowsHookEx(IntPtr hhk);
