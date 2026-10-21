@@ -1,6 +1,5 @@
 using System;
 using System.Runtime.InteropServices;
-using System.Threading;
 
 namespace Voyl
 {
@@ -16,9 +15,6 @@ namespace Voyl
         private static int Main()
         {
             Log.Start();
-
-            // Attendre que le bureau soit prêt
-            Thread.Sleep(1000);
 
             if (!RegisterWindowClass())
             {
@@ -41,17 +37,20 @@ namespace Voyl
             int screenWidth = GetSystemMetrics(0);
             int screenHeight = GetSystemMetrics(1);
             
+            // Rendre la fenêtre transparente aux clics (WS_EX_LAYERED + WS_EX_TRANSPARENT)
+            // Cela permet de voir le bureau à travers et de cliquer sur les icônes
+            SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0000); // HWND_BOTTOM
+            
+            // Activer la transparence : alpha = 1 (opaque) mais LWA_COLORKEY pour rendre transparent
+            // Ici on utilise LWA_ALPHA avec alpha=1 pour garder opaque mais permettre le clic-through
+            // Pour Windows 10/11, il faut utiliser WS_EX_TRANSPARENT dans le style étendu
+            // Mais comme on a déjà WS_EX_LAYERED, on peut utiliser SetLayeredWindowAttributes
+            // Pour l'étape 2, on veut juste voir le bureau : on rend la fenêtre semi-transparente
+            SetLayeredWindowAttributes(_hwnd, 0, 200, 0x00000002); // LWA_ALPHA = 2, alpha=200 (~78% opaque)
+            
             // MONTRER la fenêtre
             ShowWindow(_hwnd, 5); // SW_SHOWNA
             
-            // Placer en bas du Z-order (derrière tout, y compris les icônes)
-            // HWND_BOTTOM = (IntPtr)1
-            // SWP_NOACTIVATE = 0x0010, SWP_NOZORDER = 0x0004
-            // On utilise AUCUN flag pour forcer le repositionnement
-            bool setPosResult = SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0000);
-            Log.Write($"DIAG: SetWindowPos(HWND_BOTTOM) result={setPosResult}");
-            
-            // Vérifier
             bool isVisible = IsWindowVisible(_hwnd);
             Log.Write($"DIAG: IsWindowVisible={isVisible}");
 
@@ -92,7 +91,7 @@ namespace Voyl
             int screenHeight = GetSystemMetrics(1);
             
             return CreateWindowExW(
-                0x00000020, // WS_EX_LAYERED pour compatibilité future
+                0x00000020 | 0x00000080, // WS_EX_LAYERED | WS_EX_TRANSPARENT
                 WindowClassName,
                 WindowTitle,
                 0x80000000, // WS_POPUP
@@ -203,6 +202,9 @@ namespace Voyl
 
         [DllImport("user32.dll")]
         private static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr GetModuleHandleW(string? lpModuleName);
