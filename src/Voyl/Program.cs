@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 
 namespace Voyl
 {
@@ -10,6 +11,7 @@ namespace Voyl
         private const int WindowHeight = 450;
 
         private static IntPtr _hwnd = IntPtr.Zero;
+        private static delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr> _windowProc = &WindowProc;
 
         [STAThread]
         private static int Main()
@@ -29,12 +31,12 @@ namespace Voyl
                 return 1;
             }
 
-            Win32.ShowWindow(_hwnd, 1); // SW_SHOWNORMAL = 1
+            ShowWindow(_hwnd, 1);
 
-            while (Win32.GetMessageW(out var msg, IntPtr.Zero, 0, 0))
+            while (GetMessageW(out var msg, IntPtr.Zero, 0, 0))
             {
-                Win32.TranslateMessage(ref msg);
-                Win32.DispatchMessageW(ref msg);
+                TranslateMessage(ref msg);
+                DispatchMessageW(ref msg);
             }
 
             Log.Stop();
@@ -43,73 +45,131 @@ namespace Voyl
 
         private static bool RegisterWindowClass()
         {
-            var wndClass = new Win32.WNDCLASSEXW
+            var wndClass = new WNDCLASSEXW
             {
-                cbSize = (uint)sizeof(Win32.WNDCLASSEXW),
+                cbSize = (uint)sizeof(WNDCLASSEXW),
                 style = 0,
-                lpfnWndProc = &WindowProc,
+                lpfnWndProc = _windowProc,
                 cbClsExtra = 0,
                 cbWndExtra = 0,
-                hInstance = Win32.GetModuleHandleW(null),
+                hInstance = GetModuleHandleW(null),
                 hIcon = IntPtr.Zero,
-                hCursor = Win32.LoadCursorW(IntPtr.Zero, 32512), // IDC_ARROW
-                hbrBackground = (IntPtr)(5), // COLOR_WINDOW + 1 = 5
+                hCursor = LoadCursorW(IntPtr.Zero, 32512),
+                hbrBackground = (IntPtr)5,
                 lpszMenuName = null,
                 lpszClassName = WindowClassName,
                 hIconSm = IntPtr.Zero
             };
 
-            return Win32.RegisterClassExW(ref wndClass) != 0;
+            return RegisterClassExW(ref wndClass) != 0;
         }
 
         private static IntPtr CreateWindow()
         {
-            return Win32.CreateWindowExW(
+            return CreateWindowExW(
                 0,
                 WindowClassName,
                 WindowTitle,
-                0x80000000 | 0x00080000, // WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU
+                0x80000000 | 0x00080000,
                 100, 100, WindowWidth, WindowHeight,
                 IntPtr.Zero,
                 IntPtr.Zero,
-                Win32.GetModuleHandleW(null),
+                GetModuleHandleW(null),
                 IntPtr.Zero);
         }
 
-        [UnmanagedCallersOnly]
+        [UnmanagedCallersOnly(EntryPoint = "WindowProc")]
         private static IntPtr WindowProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
         {
             switch (msg)
             {
-                case 0x0010: // WM_CLOSE
-                    Win32.DestroyWindow(hWnd);
-                    Win32.PostQuitMessage(0);
+                case 0x0010:
+                    DestroyWindow(hWnd);
+                    PostQuitMessage(0);
                     return IntPtr.Zero;
-
-                case 0x0112: // WM_SYSCOMMAND
-                    if ((wParam.ToInt32() & 0xFFF0) == 0xF010) // SC_CLOSE
+                case 0x0112:
+                    if ((wParam.ToInt32() & 0xFFF0) == 0xF010)
                     {
-                        Win32.DestroyWindow(hWnd);
-                        Win32.PostQuitMessage(0);
+                        DestroyWindow(hWnd);
+                        PostQuitMessage(0);
                         return IntPtr.Zero;
                     }
                     break;
-
-                case 0x0100: // WM_KEYDOWN
-                    if (wParam.ToInt32() == 0x1B) // VK_ESCAPE
+                case 0x0100:
+                    if (wParam.ToInt32() == 0x1B)
                     {
-                        Win32.DestroyWindow(hWnd);
-                        Win32.PostQuitMessage(0);
+                        DestroyWindow(hWnd);
+                        PostQuitMessage(0);
                         return IntPtr.Zero;
                     }
                     break;
-
-                case 0x0002: // WM_DESTROY
-                    Win32.PostQuitMessage(0);
+                case 0x0002:
+                    PostQuitMessage(0);
                     return IntPtr.Zero;
             }
-
-            return Win32.DefWindowProcW(hWnd, msg, wParam, lParam);
+            return DefWindowProcW(hWnd, msg, wParam, lParam);
         }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct WNDCLASSEXW
+        {
+            public uint cbSize;
+            public uint style;
+            public delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr> lpfnWndProc;
+            public int cbClsExtra;
+            public int cbWndExtra;
+            public IntPtr hInstance;
+            public IntPtr hIcon;
+            public IntPtr hCursor;
+            public IntPtr hbrBackground;
+            public string lpszMenuName;
+            public string lpszClassName;
+            public IntPtr hIconSm;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MSG
+        {
+            public IntPtr hwnd;
+            public uint message;
+            public IntPtr wParam;
+            public IntPtr lParam;
+            public uint time;
+            public int ptX;
+            public int ptY;
+        }
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern ushort RegisterClassExW(ref WNDCLASSEXW wndClass);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr CreateWindowExW(uint dwExStyle, string lpClassName, string lpWindowName, uint dwStyle, int x, int y, int nWidth, int nHeight, IntPtr hWndParent, IntPtr hMenu, IntPtr hInstance, IntPtr lpParam);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr DefWindowProcW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern void PostQuitMessage(int nExitCode);
+
+        [DllImport("user32.dll")]
+        private static extern bool DestroyWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetMessageW(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+
+        [DllImport("user32.dll")]
+        private static extern bool TranslateMessage(ref MSG lpMsg);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr DispatchMessageW(ref MSG lpMsg);
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr GetModuleHandleW(string lpModuleName);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr LoadCursorW(IntPtr hInstance, int lpCursorName);
     }
 }
