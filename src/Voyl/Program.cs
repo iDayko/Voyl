@@ -7,23 +7,15 @@ namespace Voyl
     {
         private const string WindowClassName = "VoylWindowClass";
         private const string WindowTitle = "Voyl";
+        private const int HOTKEY_ID = 1;
 
         private static IntPtr _hwnd = IntPtr.Zero;
-        private static IntPtr _hook = IntPtr.Zero;
         private static delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr> _windowProc = &WindowProc;
-        private static delegate* unmanaged<nint, int, nint> _keyboardHookProc = &KeyboardProc;
 
         [STAThread]
         private static int Main()
         {
             Log.Start();
-
-            // Installer le hook clavier global pour Échap
-            _hook = SetWindowsHookExW(13, _keyboardHookProc, GetModuleHandleW(null!), 0);
-            if (_hook == IntPtr.Zero)
-            {
-                Log.Write("WARN: Failed to install keyboard hook");
-            }
 
             if (!RegisterWindowClass())
             {
@@ -41,6 +33,10 @@ namespace Voyl
             }
 
             Log.Write($"DIAG: Voyl HWND=0x{_hwnd.ToInt64():X}");
+
+            // Enregistrer le hotkey Échap (VK_ESCAPE = 0x1B)
+            bool hotkeyResult = RegisterHotKey(_hwnd, HOTKEY_ID, 0, 0x1B);
+            Log.Write($"DIAG: RegisterHotKey result={hotkeyResult}");
 
             // Positionner la fenêtre
             int screenWidth = GetSystemMetrics(0);
@@ -62,11 +58,8 @@ namespace Voyl
                 DispatchMessageW(ref msg);
             }
 
-            // Désinstaller le hook
-            if (_hook != IntPtr.Zero)
-            {
-                UnhookWindowsHookEx(_hook);
-            }
+            // Désenregistrer le hotkey
+            UnregisterHotKey(_hwnd, HOTKEY_ID);
 
             Log.Stop();
             return 0;
@@ -129,6 +122,15 @@ namespace Voyl
                     }
                     break;
 
+                case 0x0312: // WM_HOTKEY
+                    if (wParam.ToInt32() == HOTKEY_ID)
+                    {
+                        DestroyWindow(hWnd);
+                        PostQuitMessage(0);
+                        return IntPtr.Zero;
+                    }
+                    break;
+
                 case 0x0100: // WM_KEYDOWN
                     if (wParam.ToInt32() == 0x1B) // VK_ESCAPE
                     {
@@ -144,24 +146,6 @@ namespace Voyl
             }
 
             return DefWindowProcW(hWnd, msg, wParam, lParam);
-        }
-
-        [UnmanagedCallersOnly]
-        private static IntPtr KeyboardProc(int nCode, IntPtr wParam, IntPtr lParam)
-        {
-            if (nCode >= 0)
-            {
-                if (wParam.ToInt32() == 0x0100) // WM_KEYDOWN
-                {
-                    int vkCode = Marshal.ReadInt32(lParam);
-                    if (vkCode == 0x1B) // VK_ESCAPE
-                    {
-                        PostQuitMessage(0);
-                        return (IntPtr)1; // Bloquer le message
-                    }
-                }
-            }
-            return CallNextHookEx(_hook, nCode, wParam, lParam);
         }
 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
@@ -230,13 +214,10 @@ namespace Voyl
         private static extern bool IsWindowVisible(IntPtr hWnd);
 
         [DllImport("user32.dll")]
-        private static extern IntPtr SetWindowsHookExW(int idHook, delegate* unmanaged<nint, int, nint> lpfn, IntPtr hMod, int dwThreadId);
+        private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
 
         [DllImport("user32.dll")]
-        private static extern bool UnhookWindowsHookEx(IntPtr hhk);
-
-        [DllImport("user32.dll")]
-        private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+        private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr GetModuleHandleW(string? lpModuleName);
