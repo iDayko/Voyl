@@ -59,22 +59,24 @@ namespace Voyl
             int screenWidth = GetSystemMetrics(0);
             int screenHeight = GetSystemMetrics(1);
             
-            // MONTRER la fenêtre AVANT de la positionner
-            ShowWindow(_hwnd, 5); // SW_SHOWNA = 5
+            // MONTRER la fenêtre
+            ShowWindow(_hwnd, 5); // SW_SHOWNA
             
-            // Vérifier qu'elle est visible
-            bool isVisibleBefore = IsWindowVisible(_hwnd);
-            Log.Write($"DIAG: IsWindowVisible before SetWindowPos={isVisibleBefore}");
+            // Placer DERRIÈRE tout (HWND_BOTTOM = 1)
+            // Sans SWP_NOZORDER pour forcer le changement de Z-order
+            bool setPosResult = SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0000);
+            Log.Write($"DIAG: SetWindowPos(HWND_BOTTOM) result={setPosResult}");
             
-            // TEST: Placer TEMPORAIREMENT au TOPMOST pour VÉRIFIER que la fenêtre existe
-            bool setPosResult = SetWindowPos(_hwnd, (IntPtr)(-1), 0, 0, screenWidth, screenHeight, 0x0000);
-            Log.Write($"DIAG: SetWindowPos result={setPosResult}");
+            // Vérifier
+            bool isVisible = IsWindowVisible(_hwnd);
+            Log.Write($"DIAG: IsWindowVisible={isVisible}");
             
-            // Vérifier après
-            bool isVisibleAfter = IsWindowVisible(_hwnd);
-            Log.Write($"DIAG: IsWindowVisible after SetWindowPos={isVisibleAfter}");
+            // Vérifier l'ordre Z: obtenir le HWND de la fenêtre sous le curseur
+            POINT cursorPos;
+            GetCursorPos(out cursorPos);
+            IntPtr hwndUnderCursor = WindowFromPoint(cursorPos);
+            Log.Write($"DIAG: HWND under cursor=0x{hwndUnderCursor.ToInt64():X}");
 
-            // Boucle de messages
             while (GetMessageW(out var msg, IntPtr.Zero, 0, 0))
             {
                 TranslateMessage(ref msg);
@@ -213,6 +215,13 @@ namespace Voyl
             public int ptY;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        private struct POINT
+        {
+            public int x;
+            public int y;
+        }
+
         [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern ushort RegisterClassExW(ref WNDCLASSEXW wndClass);
 
@@ -257,6 +266,12 @@ namespace Voyl
 
         [DllImport("user32.dll")]
         private static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetCursorPos(out POINT lpPoint);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr WindowFromPoint(POINT Point);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr GetModuleHandleW(string? lpModuleName);
