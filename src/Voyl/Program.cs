@@ -8,11 +8,8 @@ namespace Voyl
         private const string WindowClassName = "VoylWindowClass";
         private const string WindowTitle = "Voyl";
 
-        // HWND_BOTTOM = (IntPtr)1
-        private static readonly IntPtr HWND_BOTTOM = (IntPtr)1;
-
         private static IntPtr _hwnd = IntPtr.Zero;
-        private static IntPtr _desktopHwnd = IntPtr.Zero;
+        private static IntPtr _progmanHwnd = IntPtr.Zero;
         private static delegate* unmanaged<IntPtr, uint, IntPtr, IntPtr, IntPtr> _windowProc = &WindowProc;
 
         [STAThread]
@@ -20,7 +17,13 @@ namespace Voyl
         {
             Log.Start();
 
-            _desktopHwnd = GetDesktopWindow();
+            // Obtenir le HWND de Progman (fenêtre du bureau qui contient les icônes)
+            _progmanHwnd = FindWindowW("Progman", "Program Manager");
+            if (_progmanHwnd == IntPtr.Zero)
+            {
+                // Essayons avec le nom de classe "SysListView32" (pour les icônes du bureau)
+                _progmanHwnd = FindWindowW("SysListView32", null);
+            }
 
             if (!RegisterWindowClass())
             {
@@ -38,7 +41,17 @@ namespace Voyl
             // Positionner derrière les icônes du bureau
             int screenWidth = GetSystemMetrics(0); // SM_CXSCREEN
             int screenHeight = GetSystemMetrics(1); // SM_CYSCREEN
-            SetWindowPos(_hwnd, HWND_BOTTOM, 0, 0, screenWidth, screenHeight, 0x0002); // SWP_NOACTIVATE seulement
+            
+            // Si on a trouvé Progman, on se place derrière
+            if (_progmanHwnd != IntPtr.Zero)
+            {
+                SetWindowPos(_hwnd, _progmanHwnd, 0, 0, screenWidth, screenHeight, 0x0001); // SWP_NOACTIVATE
+            }
+            else
+            {
+                // Sinon, on tente HWND_BOTTOM
+                SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0001); // HWND_BOTTOM
+            }
 
             ShowWindow(_hwnd, 1); // SW_SHOWNORMAL
 
@@ -64,7 +77,7 @@ namespace Voyl
                 hInstance = GetModuleHandleW(null!),
                 hIcon = IntPtr.Zero,
                 hCursor = LoadCursorW(IntPtr.Zero, 32512),
-                hbrBackground = (IntPtr)4, // COLOR_WINDOW (fond blanc pour visibilité temporaire)
+                hbrBackground = (IntPtr)4, // COLOR_WINDOW (fond blanc)
                 lpszMenuName = null!,
                 lpszClassName = WindowClassName,
                 hIconSm = IntPtr.Zero
@@ -80,7 +93,7 @@ namespace Voyl
                 WindowClassName,
                 WindowTitle,
                 0x80000000, // WS_POPUP
-                0, 0, 1, 1, // Taille minimale initiale (sera ajustée par SetWindowPos)
+                0, 0, 1, 1, // Taille minimale initiale
                 IntPtr.Zero,
                 IntPtr.Zero,
                 GetModuleHandleW(null!),
@@ -185,8 +198,8 @@ namespace Voyl
         [DllImport("user32.dll")]
         private static extern int GetSystemMetrics(int nIndex);
 
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetDesktopWindow();
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr FindWindowW(string lpClassName, string? lpWindowName);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr GetModuleHandleW(string? lpModuleName);
