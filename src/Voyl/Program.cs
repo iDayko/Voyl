@@ -77,16 +77,22 @@ namespace Voyl
             // 1. MONTRER la fenêtre (nécessaire avant SetWindowPos)
             ShowWindow(_hwnd, 5); // SW_SHOWNA
             
-            // 2. Définir la fenêtre comme enfant de SHELLDLL_DefView pour être derrière les icônes
+            // 2. Définir la fenêtre comme enfant de SHELLDLL_DefView
             //    Si SHELLDLL_DefView introuvable, utiliser Progman
             IntPtr parentHwnd = shellDefView != IntPtr.Zero ? shellDefView : (progman != IntPtr.Zero ? progman : desktop);
-            SetParent(_hwnd, parentHwnd);
-            Log.Write($"DIAG: SetParent to 0x{parentHwnd.ToInt64():X}");
+            IntPtr oldParent = SetParent(_hwnd, parentHwnd);
+            Log.Write($"DIAG: SetParent to 0x{parentHwnd.ToInt64():X}, oldParent=0x{oldParent.ToInt64():X}");
             
-            // 3. Placer en bas du Z-order de SHELLDLL_DefView
+            // 3. Placer DERRIÈRE SysListView32 dans le Z-order de SHELLDLL_DefView
             uint flags = 0x0002 | 0x0001 | 0x0004; // SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE
-            bool setPosResult = SetWindowPos(_hwnd, (IntPtr)1, 0, 0, 0, 0, flags); // HWND_BOTTOM
-            Log.Write($"DIAG: SetWindowPos(HWND_BOTTOM) result={setPosResult}");
+            IntPtr insertAfter = sysListView32 != IntPtr.Zero ? sysListView32 : (IntPtr)1; // HWND_BOTTOM
+            bool setPosResult = SetWindowPos(_hwnd, insertAfter, 0, 0, 0, 0, flags);
+            Log.Write($"DIAG: SetWindowPos(insertAfter=0x{insertAfter.ToInt64():X}) result={setPosResult}");
+            
+            // 4. Rendre la fenêtre transparente aux clics (WS_EX_TRANSPARENT déjà set dans CreateWindowExW)
+            //    Vérifier que le style étendu est bien appliqué
+            int exStyle = GetWindowLong(_hwnd, -20); // GWL_EXSTYLE
+            Log.Write($"DIAG: Extended Style=0x{exStyle:X}");
             
             // 3. Enregistrer le hotkey Échap (global, même si la fenêtre n'est pas active)
             bool hotkeyResult = RegisterHotKey(_hwnd, HOTKEY_ID, 0, 0x1B); // VK_ESCAPE
@@ -250,6 +256,9 @@ namespace Voyl
 
         [DllImport("user32.dll")]
         private static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
+
+        [DllImport("user32.dll")]
+        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
 
         [DllImport("user32.dll")]
         private static extern int GetSystemMetrics(int nIndex);
