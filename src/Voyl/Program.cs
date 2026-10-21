@@ -21,93 +21,102 @@ namespace Voyl
         {
             Log.Start();
 
-            // Attendre que le bureau soit prêt
-            Thread.Sleep(2000);
-
-            _desktopHwnd = GetDesktopWindow();
-            _progmanHwnd = FindWindowW("Progman", "Program Manager");
-            
-            // Chercher WorkerW (fenêtre worker de Progman sur Win10/11)
-            if (_progmanHwnd != IntPtr.Zero)
+            try
             {
-                // Envoyer WM_PRINTCLIENT pour forcer la création de la hiérarchie
-                SendMessageW(_progmanHwnd, 0x0317, IntPtr.Zero, IntPtr.Zero); // WM_PRINTCLIENT
-                Thread.Sleep(500);
+                // Attendre que le bureau soit prêt
+                Thread.Sleep(2000);
+
+                _desktopHwnd = GetDesktopWindow();
+                _progmanHwnd = FindWindowW("Progman", "Program Manager");
                 
-                // Chercher WorkerW (premier enfant de Progman)
-                _workerWHwnd = FindWindowExW(_progmanHwnd, IntPtr.Zero, "WorkerW", null);
+                // Chercher WorkerW (fenêtre worker de Progman sur Win10/11)
+                if (_progmanHwnd != IntPtr.Zero)
+                {
+                    // Envoyer WM_PRINTCLIENT pour forcer la création de la hiérarchie
+                    SendMessageW(_progmanHwnd, 0x0317, IntPtr.Zero, IntPtr.Zero); // WM_PRINTCLIENT
+                    Thread.Sleep(500);
+                    
+                    // Chercher WorkerW (premier enfant de Progman)
+                    _workerWHwnd = FindWindowExW(_progmanHwnd, IntPtr.Zero, "WorkerW", null);
+                    
+                    // Si WorkerW trouvé, chercher SysListView32 dedans
+                    if (_workerWHwnd != IntPtr.Zero)
+                    {
+                        _sysListHwnd = FindWindowExW(_workerWHwnd, IntPtr.Zero, "SysListView32", null);
+                    }
+                    
+                    // Si toujours pas trouvé, chercher récursivement
+                    if (_sysListHwnd == IntPtr.Zero && _workerWHwnd != IntPtr.Zero)
+                    {
+                        _sysListHwnd = FindSysListView32(_workerWHwnd);
+                    }
+                    else if (_sysListHwnd == IntPtr.Zero)
+                    {
+                        _sysListHwnd = FindSysListView32(_progmanHwnd);
+                    }
+                }
                 
-                // Si WorkerW trouvé, chercher SysListView32 dedans
+                Log.Write($"DIAG: Desktop=0x{_desktopHwnd.ToInt64():X}, Progman=0x{_progmanHwnd.ToInt64():X}, WorkerW=0x{_workerWHwnd.ToInt64():X}, SysListView32=0x{_sysListHwnd.ToInt64():X}");
+
+                if (!RegisterWindowClass())
+                {
+                    Log.Write("ERROR: Failed to register window class");
+                    return 1;
+                }
+
+                _hwnd = CreateWindow();
+                if (_hwnd == IntPtr.Zero)
+                {
+                    Log.Write("ERROR: Failed to create window");
+                    return 1;
+                }
+
+                Log.Write($"DIAG: Voyl HWND=0x{_hwnd.ToInt64():X}");
+
+                // Positionner la fenêtre
+                int screenWidth = GetSystemMetrics(0);
+                int screenHeight = GetSystemMetrics(1);
+                
+                ShowWindow(_hwnd, 5); // SW_SHOWNA
+                
+                // Stratégie: Faire de Voyl un enfant de WorkerW (ou Progman) et le placer en bas du Z-order
                 if (_workerWHwnd != IntPtr.Zero)
                 {
-                    _sysListHwnd = FindWindowExW(_workerWHwnd, IntPtr.Zero, "SysListView32", null);
+                    SetParent(_hwnd, _workerWHwnd);
+                    Log.Write("DIAG: SetParent to WorkerW");
+                    SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0001); // HWND_BOTTOM, SWP_NOACTIVATE
+                }
+                else if (_progmanHwnd != IntPtr.Zero)
+                {
+                    SetParent(_hwnd, _progmanHwnd);
+                    Log.Write("DIAG: SetParent to Progman");
+                    SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0001);
+                }
+                else
+                {
+                    // Fallback: HWND_BOTTOM global
+                    SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0001);
+                    Log.Write("DIAG: SetWindowPos(HWND_BOTTOM) global");
                 }
                 
-                // Si toujours pas trouvé, chercher récursivement
-                if (_sysListHwnd == IntPtr.Zero && _workerWHwnd != IntPtr.Zero)
+                // Vérifier
+                bool isVisible = IsWindowVisible(_hwnd);
+                Log.Write($"DIAG: IsWindowVisible={isVisible}");
+
+                while (GetMessageW(out var msg, IntPtr.Zero, 0, 0))
                 {
-                    _sysListHwnd = FindSysListView32(_workerWHwnd);
+                    TranslateMessage(ref msg);
+                    DispatchMessageW(ref msg);
                 }
-                else if (_sysListHwnd == IntPtr.Zero)
-                {
-                    _sysListHwnd = FindSysListView32(_progmanHwnd);
-                }
-            }
-            
-            Log.Write($"DIAG: Desktop=0x{_desktopHwnd.ToInt64():X}, Progman=0x{_progmanHwnd.ToInt64():X}, WorkerW=0x{_workerWHwnd.ToInt64():X}, SysListView32=0x{_sysListHwnd.ToInt64():X}");
 
-            if (!RegisterWindowClass())
+                Log.Stop();
+            }
+            catch (Exception ex)
             {
-                Log.Write("ERROR: Failed to register window class");
-                return 1;
+                Log.Write($"EXCEPTION: {ex.Message}");
+                Log.Write($"STACK: {ex.StackTrace}");
             }
 
-            _hwnd = CreateWindow();
-            if (_hwnd == IntPtr.Zero)
-            {
-                Log.Write("ERROR: Failed to create window");
-                return 1;
-            }
-
-            Log.Write($"DIAG: Voyl HWND=0x{_hwnd.ToInt64():X}");
-
-            // Positionner la fenêtre
-            int screenWidth = GetSystemMetrics(0);
-            int screenHeight = GetSystemMetrics(1);
-            
-            ShowWindow(_hwnd, 5); // SW_SHOWNA
-            
-            // Stratégie: Faire de Voyl un enfant de WorkerW (ou Progman) et le placer en bas du Z-order
-            if (_workerWHwnd != IntPtr.Zero)
-            {
-                SetParent(_hwnd, _workerWHwnd);
-                Log.Write("DIAG: SetParent to WorkerW");
-                SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0001); // HWND_BOTTOM, SWP_NOACTIVATE
-            }
-            else if (_progmanHwnd != IntPtr.Zero)
-            {
-                SetParent(_hwnd, _progmanHwnd);
-                Log.Write("DIAG: SetParent to Progman");
-                SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0001);
-            }
-            else
-            {
-                // Fallback: HWND_BOTTOM global
-                SetWindowPos(_hwnd, (IntPtr)1, 0, 0, screenWidth, screenHeight, 0x0001);
-                Log.Write("DIAG: SetWindowPos(HWND_BOTTOM) global");
-            }
-            
-            // Vérifier
-            bool isVisible = IsWindowVisible(_hwnd);
-            Log.Write($"DIAG: IsWindowVisible={isVisible}");
-
-            while (GetMessageW(out var msg, IntPtr.Zero, 0, 0))
-            {
-                TranslateMessage(ref msg);
-                DispatchMessageW(ref msg);
-            }
-
-            Log.Stop();
             return 0;
         }
 
