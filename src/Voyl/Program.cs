@@ -18,10 +18,19 @@ namespace Voyl
         {
             Log.Start();
 
-            // Diagnostics: trouver les fenêtres du bureau
+            // Obtenir Progman (fenêtre parente du bureau)
             _progmanHwnd = FindWindowW("Progman", "Program Manager");
-            _sysListHwnd = FindWindowExW(_progmanHwnd, IntPtr.Zero, "SysListView32", null);
-            Log.Write($"DIAG: Progman=0x{_progmanHwnd.ToInt64():X}, SysListView32=0x{_sysListHwnd.ToInt64():X}");
+            
+            // Chercher SysListView32 parmi les enfants de Progman
+            if (_progmanHwnd != IntPtr.Zero)
+            {
+                _sysListHwnd = FindWindowExW(_progmanHwnd, IntPtr.Zero, "SysListView32", null);
+                Log.Write($"DIAG: Progman=0x{_progmanHwnd.ToInt64():X}, SysListView32=0x{_sysListHwnd.ToInt64():X}");
+            }
+            else
+            {
+                Log.Write("DIAG: Progman not found");
+            }
 
             if (!RegisterWindowClass())
             {
@@ -42,8 +51,15 @@ namespace Voyl
             int screenWidth = GetSystemMetrics(0);
             int screenHeight = GetSystemMetrics(1);
             
-            // Temporairement: placer DEVANT pour vérification (HWND_TOPMOST)
-            SetWindowPos(_hwnd, (IntPtr)(-1), 0, 0, screenWidth, screenHeight, 0x0000); // Aucun flag = applique tout
+            // Essayer de se placer derrière SysListView32 (icônes) si trouvé
+            // Sinon derrière Progman, sinon HWND_BOTTOM
+            IntPtr insertAfter = _sysListHwnd != IntPtr.Zero ? _sysListHwnd : 
+                              (_progmanHwnd != IntPtr.Zero ? _progmanHwnd : (IntPtr)1); // HWND_BOTTOM = 1
+            
+            // SWP_NOACTIVATE = 0x0010, SWP_NOZORDER = 0x0004
+            // On utilise AUCUN flag pour forcer le repositionnement
+            bool result = SetWindowPos(_hwnd, insertAfter, 0, 0, screenWidth, screenHeight, 0);
+            Log.Write($"DIAG: SetWindowPos result={result}, insertAfter=0x{insertAfter.ToInt64():X}");
 
             ShowWindow(_hwnd, 1);
 
@@ -69,7 +85,7 @@ namespace Voyl
                 hInstance = GetModuleHandleW(null!),
                 hIcon = IntPtr.Zero,
                 hCursor = LoadCursorW(IntPtr.Zero, 32512),
-                hbrBackground = (IntPtr)4, // Fond blanc
+                hbrBackground = (IntPtr)4, // Fond blanc pour visibilité
                 lpszMenuName = null!,
                 lpszClassName = WindowClassName,
                 hIconSm = IntPtr.Zero
