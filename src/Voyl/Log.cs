@@ -1,6 +1,6 @@
 using System;
 using System.IO;
-using System.Runtime.InteropServices;
+using System.Text;
 
 namespace Voyl
 {
@@ -21,12 +21,8 @@ namespace Voyl
             try
             {
                 Directory.CreateDirectory(LogDirectory);
-                Write("START: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"));
             }
-            catch
-            {
-                // Fail silently - no logging dependency allowed
-            }
+            catch { }
         }
 
         internal static void Stop()
@@ -35,21 +31,24 @@ namespace Voyl
             {
                 Write("STOP: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"));
             }
-            catch
-            {
-                // Fail silently
-            }
+            catch { }
         }
 
         internal static void Write(string message)
         {
             try
             {
-                File.AppendAllText(LogPath, message + Environment.NewLine);
+                // Use File.AppendAllText with UTF-8 encoding to avoid BOM issues
+                File.AppendAllText(LogPath, message + Environment.NewLine, Encoding.UTF8);
             }
             catch
             {
-                // Fail silently
+                // Fallback: try with ASCII encoding
+                try
+                {
+                    File.AppendAllText(LogPath, message + Environment.NewLine, Encoding.ASCII);
+                }
+                catch { }
             }
         }
     }
