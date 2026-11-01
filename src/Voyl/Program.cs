@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace Voyl
 {
@@ -54,7 +55,6 @@ namespace Voyl
                 // Find the new WorkerW created by 0x052C
                 IntPtr workerW = IntPtr.Zero;
                 IntPtr targetWorkerW = IntPtr.Zero;
-                IntPtr targetDefView = IntPtr.Zero;
                 
                 do
                 {
@@ -65,9 +65,8 @@ namespace Voyl
                         if (defView != IntPtr.Zero)
                         {
                             targetWorkerW = workerW;
-                            targetDefView = defView;
                             IntPtr sysListView32 = FindWindowEx(defView, IntPtr.Zero, "SysListView32", null);
-                            Log.Write($"DIAG: Found WorkerW=0x{targetWorkerW.ToInt64():X}, SHELLDLL_DefView=0x{targetDefView.ToInt64():X}, SysListView32=0x{sysListView32.ToInt64():X}");
+                            Log.Write($"DIAG: Found WorkerW=0x{targetWorkerW.ToInt64():X}, SHELLDLL_DefView=0x{defView.ToInt64():X}, SysListView32=0x{sysListView32.ToInt64():X}");
                             break;
                         }
                     }
@@ -82,30 +81,29 @@ namespace Voyl
                     // Position at bottom of WorkerW's Z-order
                     bool posResult = SetWindowPos(_hwnd, (IntPtr)(-1), 0, 0, screenWidth, screenHeight, 0x0002 | 0x0001 | 0x0004);
                     Log.Write($"DIAG: SetWindowPos(HWND_BOTTOM) result={posResult}");
-                    
-                    // Make completely transparent
-                    bool layeredResult = SetLayeredWindowAttributes(_hwnd, 0, 0, 0x00000002);
-                    Log.Write($"DIAG: SetLayeredWindowAttributes(alpha=0) result={layeredResult}");
                 }
                 else
                 {
                     Log.Write("WARN: WorkerW with SHELLDLL_DefView not found, fallback to Progman");
-                    IntPtr oldParent = SetParent(_hwnd, progman);
-                    Log.Write($"DIAG: SetParent(Progman=0x{progman.ToInt64():X}) oldParent=0x{oldParent.ToInt64():X}");
-                    bool posResult = SetWindowPos(_hwnd, (IntPtr)(-1), 0, 0, screenWidth, screenHeight, 0x0002 | 0x0001 | 0x0004);
-                    Log.Write($"DIAG: SetWindowPos(HWND_BOTTOM) result={posResult}");
-                    bool layeredResult = SetLayeredWindowAttributes(_hwnd, 0, 0, 0x00000002);
-                    Log.Write($"DIAG: SetLayeredWindowAttributes(alpha=0) result={layeredResult}");
+                    SetParent(_hwnd, progman);
+                    SetWindowPos(_hwnd, (IntPtr)(-1), 0, 0, screenWidth, screenHeight, 0x0002 | 0x0001 | 0x0004);
                 }
             }
             else
             {
                 Log.Write("ERROR: Progman not found, fallback to HWND_BOTTOM");
-                bool posResult = SetWindowPos(_hwnd, (IntPtr)(-1), 0, 0, screenWidth, screenHeight, 0x0002 | 0x0001 | 0x0004);
-                Log.Write($"DIAG: SetWindowPos(HWND_BOTTOM) result={posResult}");
-                bool layeredResult = SetLayeredWindowAttributes(_hwnd, 0, 0, 0x00000002);
-                Log.Write($"DIAG: SetLayeredWindowAttributes(alpha=0) result={layeredResult}");
+                SetWindowPos(_hwnd, (IntPtr)(-1), 0, 0, screenWidth, screenHeight, 0x0002 | 0x0001 | 0x0004);
             }
+
+            // Show window with BLACK background for 3 seconds (visual confirmation)
+            ShowWindow(_hwnd, 5);
+            Log.Write("DIAG: Window shown with BLACK background for 3 seconds - CHECK POSITION");
+            System.Threading.Thread.Sleep(3000);
+
+            // Now make it fully transparent
+            bool layeredResult = SetLayeredWindowAttributes(_hwnd, 0, 0, 0x00000002);
+            Log.Write($"DIAG: SetLayeredWindowAttributes(alpha=0) result={layeredResult}");
+            Log.Write("DIAG: Window is now FULLY TRANSPARENT - icons should be clickable");
 
             // Verify final state
             IntPtr currentParent = GetParent(_hwnd);
@@ -114,9 +112,8 @@ namespace Voyl
 
             // Register global hotkey for Escape
             bool hotkeyResult = RegisterHotKey(IntPtr.Zero, HOTKEY_ID, 0, 0x1B);
-            Log.Write($"DIAG: RegisterHotKey(result={hotkeyResult})");
+            Log.Write($"DIAG: RegisterHotKey(result={hotkeyResult}) - Press ESC to close");
 
-            ShowWindow(_hwnd, 5);
             bool isVisible = IsWindowVisible(_hwnd);
             Log.Write($"DIAG: IsWindowVisible={isVisible}");
 
@@ -151,7 +148,7 @@ namespace Voyl
                 hInstance = GetModuleHandleW(null!),
                 hIcon = IntPtr.Zero,
                 hCursor = LoadCursorW(IntPtr.Zero, 32512),
-                hbrBackground = (IntPtr)1, // BLACK_BRUSH
+                hbrBackground = (IntPtr)1, // BLACK_BRUSH for visual confirmation
                 lpszMenuName = null!,
                 lpszClassName = WindowClassName,
                 hIconSm = IntPtr.Zero

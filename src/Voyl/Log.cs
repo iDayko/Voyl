@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Text;
 
 namespace Voyl
 {
@@ -37,12 +38,18 @@ namespace Voyl
         {
             try
             {
-                using var stream = File.Open(LogPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
-                using var writer = new StreamWriter(stream);
-                writer.WriteLine(message);
-                writer.Flush();
+                // Use File.AppendAllText with UTF-8 encoding to avoid BOM issues
+                File.AppendAllText(LogPath, message + Environment.NewLine, Encoding.UTF8);
             }
-            catch { }
+            catch
+            {
+                // Fallback: try with ASCII encoding
+                try
+                {
+                    File.AppendAllText(LogPath, message + Environment.NewLine, Encoding.ASCII);
+                }
+                catch { }
+            }
         }
     }
 }
