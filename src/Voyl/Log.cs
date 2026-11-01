@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Runtime.InteropServices;
 
 namespace Voyl
 {
@@ -21,12 +20,8 @@ namespace Voyl
             try
             {
                 Directory.CreateDirectory(LogDirectory);
-                Write("START: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"));
             }
-            catch
-            {
-                // Fail silently - no logging dependency allowed
-            }
+            catch { }
         }
 
         internal static void Stop()
@@ -35,22 +30,19 @@ namespace Voyl
             {
                 Write("STOP: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"));
             }
-            catch
-            {
-                // Fail silently
-            }
+            catch { }
         }
 
         internal static void Write(string message)
         {
             try
             {
-                File.AppendAllText(LogPath, message + Environment.NewLine);
+                using var stream = File.Open(LogPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+                using var writer = new StreamWriter(stream);
+                writer.WriteLine(message);
+                writer.Flush();
             }
-            catch
-            {
-                // Fail silently
-            }
+            catch { }
         }
     }
 }
