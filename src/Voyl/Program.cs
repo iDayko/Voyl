@@ -44,71 +44,83 @@ namespace Voyl
             
             Log.Write($"DIAG: Desktop=0x{desktop.ToInt64():X}, Progman=0x{progman.ToInt64():X}");
 
-            // SEELEN UI METHOD: Send 0x052C to Progman
+            // SEELEN UI METHOD: Send 0x052C to Progman to create WorkerW behind icons
             if (progman != IntPtr.Zero)
             {
-                SendMessage(progman, 0x052C, IntPtr.Zero, IntPtr.Zero);
-                System.Threading.Thread.Sleep(500);
+                IntPtr msgResult = SendMessage(progman, 0x052C, IntPtr.Zero, IntPtr.Zero);
+                Log.Write($"DIAG: SendMessage(0x052C) result=0x{msgResult.ToInt64():X}");
+                System.Threading.Thread.Sleep(1000); // Wait longer for WorkerW creation
 
-                // Find the WorkerW that was created by 0x052C (this is the one BEHIND icons)
+                // Find the new WorkerW created by 0x052C
                 IntPtr workerW = IntPtr.Zero;
                 IntPtr targetWorkerW = IntPtr.Zero;
+                IntPtr targetDefView = IntPtr.Zero;
                 
+                // Enumerate all WorkerW windows under desktop
                 do
                 {
                     workerW = FindWindowEx(desktop, workerW, "WorkerW", null);
-                    IntPtr defView = FindWindowEx(workerW, IntPtr.Zero, "SHELLDLL_DefView", null);
-                    if (defView != IntPtr.Zero)
+                    if (workerW != IntPtr.Zero)
                     {
-                        targetWorkerW = workerW;
-                        IntPtr sysListView32 = FindWindowEx(defView, IntPtr.Zero, "SysListView32", null);
-                        Log.Write($"DIAG: WorkerW=0x{targetWorkerW.ToInt64():X}, SHELLDLL_DefView=0x{defView.ToInt64():X}, SysListView32=0x{sysListView32.ToInt64():X}");
-                        break;
+                        IntPtr defView = FindWindowEx(workerW, IntPtr.Zero, "SHELLDLL_DefView", null);
+                        if (defView != IntPtr.Zero)
+                        {
+                            // This WorkerW contains the desktop icons
+                            targetWorkerW = workerW;
+                            targetDefView = defView;
+                            IntPtr sysListView32 = FindWindowEx(defView, IntPtr.Zero, "SysListView32", null);
+                            Log.Write($"DIAG: Found WorkerW=0x{targetWorkerW.ToInt64():X}, SHELLDLL_DefView=0x{targetDefView.ToInt64():X}, SysListView32=0x{sysListView32.ToInt64():X}");
+                            break;
+                        }
                     }
                 } while (workerW != IntPtr.Zero);
 
                 if (targetWorkerW != IntPtr.Zero)
                 {
-                    // The WorkerW created by 0x052C is the one that contains the desktop icons
-                    // We need to position Voyl BEHIND this WorkerW
-                    // SetWindowPos with insertAfter=targetWorkerW places Voyl BEFORE targetWorkerW in Z-order
-                    // To place BEHIND, we need to use the WorkerW's parent or a lower Z-order
+                    // The key insight from Seelen UI:
+                    // The WorkerW created by 0x052C is a NEW window that sits BEHIND the icons
+                    // We need to make our window a child of this WorkerW
+                    // AND position it at the bottom of its Z-order
                     
-                    // Try: Set Voyl as child of desktop, positioned behind WorkerW
-                    // First, ensure Voyl is child of desktop
-                    SetParent(_hwnd, desktop);
+                    // Step 1: Make Voyl a child of the WorkerW
+                    IntPtr oldParent = SetParent(_hwnd, targetWorkerW);
+                    Log.Write($"DIAG: SetParent(WorkerW) oldParent=0x{oldParent.ToInt64():X}");
                     
-                    // Then position behind WorkerW using SetWindowPos
-                    // HWND_BOTTOM = (IntPtr)(-1)
-                    // But we want specifically behind WorkerW
-                    // Try: insertAfter = GetWindow(WorkerW, GW_HWNDNEXT) to get what's behind WorkerW
-                    
-                    // Alternative: Use HWND_BOTTOM and rely on Z-order
+                    // Step 2: Position at bottom of WorkerW's children
                     bool posResult = SetWindowPos(_hwnd, (IntPtr)(-1), 0, 0, screenWidth, screenHeight, 0x0002 | 0x0001 | 0x0004);
                     Log.Write($"DIAG: SetWindowPos(HWND_BOTTOM) result={posResult}");
                     
-                    // Then bring WorkerW to front to ensure proper ordering
-                    SetWindowPos(targetWorkerW, (IntPtr)(-2), 0, 0, 0, 0, 0x0002 | 0x0001 | 0x0004); // HWND_NOTOPMOST
+                    // Step 3: Make it transparent and click-through
+                    bool layeredResult = SetLayeredWindowAttributes(_hwnd, 0, 0, 0x00000002); // LWA_ALPHA
+                    Log.Write($"DIAG: SetLayeredWindowAttributes(alpha=0) result={layeredResult}");
+                }
+                else
+                {
+                    Log.Write("ERROR: WorkerW with SHELLDLL_DefView not found after 0x052C");
+                    // Fallback: try with Progman
+                    SetParent(_hwnd, progman);
+                    SetWindowPos(_hwnd, (IntPtr)(-1), 0, 0, screenWidth, screenHeight, 0x0002 | 0x0001 | 0x0004);
+                    SetLayeredWindowAttributes(_hwnd, 0, 0, 0x00000002);
                 }
             }
             else
             {
-                Log.Write("DIAG: Progman not found");
+                Log.Write("ERROR: Progman not found");
+                // Ultimate fallback
+                SetWindowPos(_hwnd, (IntPtr)(-1), 0, 0, screenWidth, screenHeight, 0x0002 | 0x0001 | 0x0004);
+                SetLayeredWindowAttributes(_hwnd, 0, 0, 0x00000002);
             }
 
-            // Make window transparent
-            bool layeredResult = SetLayeredWindowAttributes(_hwnd, 0, 255, 0x00000001); // LWA_COLORKEY
-            Log.Write($"DIAG: SetLayeredWindowAttributes(COLORKEY) result={layeredResult}");
-            
-            // Also try alpha
-            layeredResult = SetLayeredWindowAttributes(_hwnd, 0, 0, 0x00000002); // LWA_ALPHA
-            Log.Write($"DIAG: SetLayeredWindowAttributes(ALPHA=0) result={layeredResult}");
+            // Verify final state
+            IntPtr currentParent = GetParent(_hwnd);
+            int exStyle = GetWindowLong(_hwnd, -20);
+            Log.Write($"DIAG: Final Parent=0x{currentParent.ToInt64():X}, ExtendedStyle=0x{exStyle:X}");
 
-            // Register global hotkey
+            // Register global hotkey for Escape
             bool hotkeyResult = RegisterHotKey(IntPtr.Zero, HOTKEY_ID, 0, 0x1B);
             Log.Write($"DIAG: RegisterHotKey result={hotkeyResult}");
 
-            ShowWindow(_hwnd, 5);
+            ShowWindow(_hwnd, 5); // SW_SHOWNA
             Log.Write($"DIAG: IsWindowVisible={IsWindowVisible(_hwnd)}");
 
             while (GetMessageW(out var msg, IntPtr.Zero, 0, 0))
@@ -142,7 +154,7 @@ namespace Voyl
                 hInstance = GetModuleHandleW(null!),
                 hIcon = IntPtr.Zero,
                 hCursor = LoadCursorW(IntPtr.Zero, 32512),
-                hbrBackground = (IntPtr)1, // BLACK_BRUSH
+                hbrBackground = (IntPtr)1, // BLACK_BRUSH for visual verification
                 lpszMenuName = null!,
                 lpszClassName = WindowClassName,
                 hIconSm = IntPtr.Zero
